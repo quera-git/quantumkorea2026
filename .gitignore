@@ -38,3 +38,6 @@ Thumbs.db
 
 # --- Claude Code 로컬 메모리/설정 ---
 .claude/
+
+# --- Optimizer Code 원본 ---
+worker-origin/
