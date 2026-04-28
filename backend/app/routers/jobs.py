@@ -67,9 +67,6 @@ async def submit_job(
 
     # 3) 결과 저장
     try:
-        await session.execute(
-            select(Job).where(Job.id == request.job_id)
-        )
         job_row = await session.get(Job, request.job_id)
         if job_row is not None:
             job_row.status = result.status
