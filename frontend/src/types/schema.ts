@@ -38,4 +38,11 @@ export interface OptimizeResult {
   schedule: ScheduleEntry[];
   objective_value: number | null;
   elapsed_seconds: number | null;
+  started_at: string | null;
+  error_message: string | null;
+}
+
+export interface JobAccepted {
+  job_id: string;
+  status: JobStatus;
 }

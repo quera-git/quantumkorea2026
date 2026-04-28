@@ -1,6 +1,7 @@
 """결과 조회 라우터.
 
-Job 테이블에서 result_payload를 읽어 OptimizeResult 형식으로 반환.
+폴링 대상 엔드포인트. running 상태에서도 started_at 을 반환해 클라이언트가
+경과 시간을 표시할 수 있게 한다.
 """
 import json
 import logging
@@ -21,10 +22,12 @@ async def get_result(
     job_id: str,
     session: AsyncSession = Depends(get_session),
 ) -> OptimizeResult:
-    """job_id 로 결과 조회.
+    """job_id 로 결과/진행 상태 조회.
 
-    상태가 succeeded 면 저장된 result_payload 반환,
-    그 외(running/failed/pending)는 schedule 비어있는 상태 객체 반환.
+    - succeeded: 저장된 result_payload 반환
+    - running: started_at 포함된 진행 상태 반환 (schedule 비어 있음)
+    - failed: error_message 포함된 실패 상태 반환
+    - 존재하지 않음: 404
     """
     try:
         job = await session.get(Job, job_id)
@@ -36,6 +39,9 @@ async def get_result(
 
         if job.status == "succeeded" and job.result_payload:
             payload = json.loads(job.result_payload)
+            # worker 가 만든 payload 에는 started_at 이 비어 있으므로 Job 테이블 값으로 덮어쓴다.
+            if job.started_at is not None:
+                payload["started_at"] = job.started_at.isoformat()
             return OptimizeResult.model_validate(payload)
 
         # running / failed / pending — 메타만 채워서 반환
@@ -45,6 +51,8 @@ async def get_result(
             schedule=[],
             objective_value=job.objective_value,
             elapsed_seconds=job.elapsed_seconds,
+            started_at=job.started_at,
+            error_message=job.error_message,
         )
     except HTTPException:
         raise

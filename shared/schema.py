@@ -8,6 +8,7 @@ worker-origin 노트북이 사용하는 한글 컬럼('모선항차', '접안위
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -54,10 +55,23 @@ class OptimizeRequest(BaseModel):
 
 
 class OptimizeResult(BaseModel):
-    """최적화 결과 (worker → backend → frontend)."""
+    """최적화 결과/진행 상태 (worker → backend → frontend).
+
+    status가 running 일 때 schedule 은 비어 있고 started_at 으로 경과 시간을
+    계산할 수 있다. status가 succeeded 일 때 elapsed_seconds 가 채워진다.
+    """
 
     job_id: str
     status: JobStatus
     schedule: list[ScheduleEntry] = []
     objective_value: float | None = None
     elapsed_seconds: float | None = None
+    started_at: datetime | None = None
+    error_message: str | None = None
+
+
+class JobAccepted(BaseModel):
+    """POST /jobs/ 의 즉시 반환 응답 (202 Accepted)."""
+
+    job_id: str
+    status: JobStatus = "running"
