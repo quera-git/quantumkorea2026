@@ -5,14 +5,15 @@ D-Wave 토큰과 Gurobi 라이선스를 보유하며, 같은 docker network의 b
 """
 import logging
 
-from fastapi import FastAPI
-
-from app.routers import optimize
-
+# config.py 의 startup 로그가 묻히지 않도록 라우터 import 전에 logging 초기화.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+from fastapi import FastAPI
+
+from app.routers import optimize
 
 app = FastAPI(
     title="Quantum Port Optimizer - Worker",
