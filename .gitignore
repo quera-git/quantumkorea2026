@@ -1,0 +1,40 @@
+# --- Secrets ---
+.env
+.env.local
+secrets/*.lic
+secrets/*.key
+secrets/*.pem
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Vite ---
+node_modules/
+dist/
+.vite/
+*.local
+
+# --- Database ---
+backend/data/*.db
+backend/data/*.db-journal
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Claude Code 로컬 메모리/설정 ---
+.claude/

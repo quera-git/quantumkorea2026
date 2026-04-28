@@ -1,0 +1,54 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Vite는 빌드 시점에 환경변수가 번들에 박히므로 build args로 전달해야 함
+        VITE_BACKEND_URL: http://localhost:8000
+    container_name: qpo-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    networks:
+      - qpo-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: qpo-backend
+    # 개발 편의(Swagger UI, 브라우저 디버깅)를 위해 호스트 노출 유지.
+    # nginx reverse proxy 도입 시 제거 검토.
+    ports:
+      - "8000:8000"
+    environment:
+      WORKER_URL: http://worker:9000
+      DATABASE_URL: sqlite+aiosqlite:////data/qpo.db
+    volumes:
+      - ./backend/data:/data
+    depends_on:
+      - worker
+    networks:
+      - qpo-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: qpo-worker
+    # 호스트 노출 금지. 같은 docker network 내부에서만 접근 가능.
+    expose:
+      - "9000"
+    environment:
+      DWAVE_API_TOKEN: ${DWAVE_API_TOKEN}
+      GRB_LICENSE_FILE: /opt/gurobi/gurobi.lic
+    volumes:
+      - ./secrets/gurobi.lic:/opt/gurobi/gurobi.lic:ro
+    networks:
+      - qpo-net
+
+networks:
+  qpo-net:
+    driver: bridge
