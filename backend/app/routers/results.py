@@ -39,9 +39,9 @@ async def get_result(
 
         if job.status == "succeeded" and job.result_payload:
             payload = json.loads(job.result_payload)
-            # 저장된 payload 에 started_at 이 없을 수 있어 보강.
-            payload.setdefault("started_at",
-                               job.started_at.isoformat() if job.started_at else None)
+            # worker 가 만든 payload 에는 started_at 이 비어 있으므로 Job 테이블 값으로 덮어쓴다.
+            if job.started_at is not None:
+                payload["started_at"] = job.started_at.isoformat()
             return OptimizeResult.model_validate(payload)
 
         # running / failed / pending — 메타만 채워서 반환
