@@ -2,26 +2,34 @@
 // 추후 openapi-typescript 자동 생성 도입 검토 (AGENTS.md §4.1).
 
 export type JobStatus = 'pending' | 'running' | 'succeeded' | 'failed';
-export type SolverName = 'dwave' | 'gurobi';
+export type SolverName = 'gurobi' | 'cqm' | 'hybrid';
 
 export interface BPTRecord {
   vessel_id: string;
-  arrival_time: string; // ISO8601
-  berth_length: number;
-  processing_time: number;
+  length: number;
+  eta_int: number;
+  etb_int: number;
+  etd_int: number;
+  berth_position: number;
+  yangha_van?: number;
+  seonjeok_van?: number;
 }
 
 export interface ScheduleEntry {
   vessel_id: string;
-  berth_id: string;
-  start_time: string;
-  end_time: string;
+  length: number;
+  eta: number;
+  etb: number;
+  etd: number;
+  berth_position: number;
+  note: string;
 }
 
 export interface OptimizeRequest {
   job_id?: string;
   bpt_records: BPTRecord[];
   solver: SolverName;
+  planning_start_time?: number;
 }
 
 export interface OptimizeResult {
