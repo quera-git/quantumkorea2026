@@ -1,43 +1,57 @@
-"""최적화 작업 제출/조회 라우터.
+"""최적화 작업 제출/조회 라우터 (비동기 폴링 패턴).
 
 작업 lifecycle:
   pending → running → (succeeded | failed)
 
-worker 호출은 반드시 services.worker_client를 경유한다 (AGENTS.md §4.3).
+POST /jobs/ 는 BackgroundTasks 로 worker 호출을 비동기 실행하고 즉시 202를
+반환한다. 클라이언트는 GET /results/{job_id} 를 폴링한다.
+
+worker 호출은 services.worker_client 를 경유한다 (AGENTS.md §4.3).
 """
 import logging
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
+from app.db import SessionLocal, get_session
 from app.models import Job
 from app.services.worker_client import submit_to_worker
-from shared.schema import OptimizeRequest, OptimizeResult
+from shared.schema import JobAccepted, OptimizeRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/", response_model=OptimizeResult)
+@router.post("/", response_model=JobAccepted, status_code=status.HTTP_202_ACCEPTED)
 async def submit_job(
     request: OptimizeRequest,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
-) -> OptimizeResult:
-    """최적화 작업 제출. Job row 생성 → worker 호출 → 결과 저장 후 반환."""
+) -> JobAccepted:
+    """최적화 작업 제출. 즉시 job_id 반환 후 worker 호출은 백그라운드 실행.
+
+    클라이언트는 GET /results/{job_id} 를 폴링하여 진행 상태와 결과를 확인한다.
+    """
+    if not request.bpt_records:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bpt_records 가 비어 있습니다.",
+        )
+
     if not request.job_id:
         request.job_id = str(uuid.uuid4())
 
-    # 1) Job row를 running 상태로 미리 저장
+    now = datetime.utcnow()
     job = Job(
         id=request.job_id,
         status="running",
         solver=request.solver,
         request_payload=request.model_dump_json(),
-        created_at=datetime.utcnow(),
+        created_at=now,
+        started_at=now,
     )
     try:
         session.add(job)
@@ -50,40 +64,9 @@ async def submit_job(
             detail=f"작업 등록 중 오류: {exc}",
         )
 
-    # 2) worker 호출
-    try:
-        result = await submit_to_worker(request)
-    except HTTPException as exc:
-        # worker 호출 실패: Job 상태 갱신 후 재던짐
-        await _mark_job_failed(session, request.job_id, str(exc.detail))
-        raise
-    except Exception as exc:
-        await _mark_job_failed(session, request.job_id, str(exc))
-        logger.exception("worker 호출 실패: %s", request.job_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"작업 처리 중 내부 오류: {exc}",
-        )
-
-    # 3) 결과 저장
-    try:
-        job_row = await session.get(Job, request.job_id)
-        if job_row is not None:
-            job_row.status = result.status
-            job_row.result_payload = result.model_dump_json()
-            job_row.objective_value = result.objective_value
-            job_row.elapsed_seconds = result.elapsed_seconds
-            job_row.completed_at = datetime.utcnow()
-            await session.commit()
-        logger.info("작업 %s 완료: status=%s", request.job_id, result.status)
-        return result
-    except Exception as exc:
-        await session.rollback()
-        logger.exception("결과 저장 실패: %s", request.job_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"결과 저장 중 오류: {exc}",
-        )
+    background_tasks.add_task(_run_optimization, request)
+    logger.info("작업 %s 백그라운드 실행 큐잉됨", request.job_id)
+    return JobAccepted(job_id=request.job_id, status="running")
 
 
 @router.get("/")
@@ -104,6 +87,7 @@ async def list_jobs(
                 "objective_value": r.objective_value,
                 "elapsed_seconds": r.elapsed_seconds,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
                 "completed_at": r.completed_at.isoformat() if r.completed_at else None,
             }
             for r in rows
@@ -116,15 +100,45 @@ async def list_jobs(
         )
 
 
+async def _run_optimization(request: OptimizeRequest) -> None:
+    """백그라운드에서 worker 호출 + DB 업데이트.
+
+    BackgroundTasks 로 호출되므로 응답 반환 후 실행된다. 자체 세션을 열어
+    사용한다 (request 세션은 이미 종료됨).
+    """
+    job_id = request.job_id
+    async with SessionLocal() as session:
+        try:
+            result = await submit_to_worker(request)
+            job = await session.get(Job, job_id)
+            if job is None:
+                logger.error("Job row 사라짐: %s", job_id)
+                return
+            job.status = result.status
+            job.result_payload = result.model_dump_json()
+            job.objective_value = result.objective_value
+            job.elapsed_seconds = result.elapsed_seconds
+            job.completed_at = datetime.utcnow()
+            await session.commit()
+            logger.info(
+                "작업 %s 완료: status=%s elapsed=%.2fs",
+                job_id, result.status, result.elapsed_seconds or 0,
+            )
+        except HTTPException as exc:
+            await _mark_job_failed(session, job_id, str(exc.detail))
+        except Exception as exc:
+            logger.exception("작업 %s 백그라운드 실행 실패", job_id)
+            await _mark_job_failed(session, job_id, str(exc))
+
+
 async def _mark_job_failed(
     session: AsyncSession, job_id: str, error_message: str
 ) -> None:
-    """Job 행을 failed 상태로 업데이트. 예외는 삼킨다 (이미 다른 예외 처리 중)."""
+    """Job 행을 failed 로 업데이트. 메시지에 토큰이 새지 않도록 길이 제한."""
     try:
         job_row = await session.get(Job, job_id)
         if job_row is not None:
             job_row.status = "failed"
-            # 에러 메시지에 토큰이 섞일 수 있는 경로는 worker_client 가 차단함.
             job_row.error_message = error_message[:500]
             job_row.completed_at = datetime.utcnow()
             await session.commit()
