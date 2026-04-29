@@ -14,6 +14,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import SessionLocal, get_session
@@ -56,12 +57,21 @@ async def submit_job(
     try:
         session.add(job)
         await session.commit()
-    except Exception as exc:
+    except IntegrityError:
+        # 동일 job_id 가 이미 존재 — 409 Conflict. 사용자 입력이 SQL 메시지로
+        # 반사되지 않도록 짧은 한글 메시지만 노출한다.
+        await session.rollback()
+        logger.info("중복 job_id 시도: %s", request.job_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"job_id 가 이미 존재합니다: {request.job_id}",
+        )
+    except Exception:
         await session.rollback()
         logger.exception("Job row 저장 실패: %s", request.job_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"작업 등록 중 오류: {exc}",
+            detail="작업 등록 중 내부 오류",
         )
 
     background_tasks.add_task(_run_optimization, request)
