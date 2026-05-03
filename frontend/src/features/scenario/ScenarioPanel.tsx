@@ -1,7 +1,10 @@
 import styled from '@emotion/styled';
-import { Layers, ShieldCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Layers, Move, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { EditorCanvas } from '@/features/editor/EditorCanvas';
+import { useEditorStore } from '@/features/editor/editor.store';
+import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
 import { SplitTimeline } from '@/features/timeline/SplitTimeline';
 import { Card } from '@/shared/ui/Card';
@@ -39,6 +42,7 @@ const Stats = styled.div(({ theme }) => ({
   color: theme.color.textMuted,
   fontFamily: theme.font.mono,
   '& strong': { color: theme.color.text, fontWeight: theme.font.weight.semibold },
+  '& .dirty': { color: theme.color.warning, fontWeight: theme.font.weight.semibold },
 }));
 
 const TabRow = styled.div(({ theme }) => ({
@@ -68,7 +72,17 @@ const Tab = styled('button', {
   '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
 }));
 
-type View = 'timeline' | 'validation';
+const EditorGrid = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: '1fr 320px',
+  gap: theme.spacing(3),
+  alignItems: 'start',
+  '@media (max-width: 1024px)': {
+    gridTemplateColumns: '1fr',
+  },
+}));
+
+type View = 'timeline' | 'editor' | 'validation';
 
 export function ScenarioPanel() {
   const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
@@ -91,13 +105,35 @@ export function ScenarioPanel() {
     return { total: scenario.rows.length, sndCount, gamCount };
   }, [scenario]);
 
+  // 에디터 상태 — editor tab 진입 시 또는 시나리오 변경 시 snapshot 로드.
+  const loadSnapshot = useEditorStore((s) => s.loadSnapshot);
+  const editorScenarioId = useEditorStore((s) => s.scenarioId);
+  const editorRows = useEditorStore((s) => s.currentRows);
+  const isDirty = useEditorStore((s) => s.isDirty());
+
+  useEffect(() => {
+    if (!scenario) return;
+    if (editorScenarioId !== scenario.scenarioId) {
+      loadSnapshot(scenario.scenarioId, scenario.rows);
+    }
+  }, [scenario, editorScenarioId, loadSnapshot]);
+
+  // 검증 / 타임라인 표시 데이터: 에디터 모드에서 편집 중이면 currentRows, 아니면 원본.
+  const displayRows = useMemo(() => {
+    if (!scenario) return [];
+    if (editorScenarioId === scenario.scenarioId && editorRows.length > 0) {
+      return editorRows;
+    }
+    return scenario.rows;
+  }, [scenario, editorScenarioId, editorRows]);
+
   return (
     <Card>
       <SectionHeader
         icon={Layers}
         number="05"
-        title="풍부 도메인 시각화"
-        description="Streamlit 원본 시나리오 (xlsx → JSON 변환). SND(상)/GAM(하) 분할 타임라인 + 검증 결과."
+        title="풍부 도메인 시각화 + 편집"
+        description="Streamlit 원본 시나리오 기반 SND/GAM 분할 타임라인 + 드래그 에디터 + 실시간 검증."
       />
 
       <Stack gap={4}>
@@ -121,6 +157,7 @@ export function ScenarioPanel() {
               GAM <strong>{stats.gamCount}</strong>
             </span>
             {scenario && <span>scenarioId={scenario.scenarioId}</span>}
+            {isDirty && <span className="dirty">● 편집됨</span>}
           </Stats>
         )}
 
@@ -138,6 +175,16 @@ export function ScenarioPanel() {
           <Tab
             type="button"
             role="tab"
+            aria-selected={view === 'editor'}
+            active={view === 'editor'}
+            onClick={() => setView('editor')}
+          >
+            <Move size={14} aria-hidden="true" />
+            편집
+          </Tab>
+          <Tab
+            type="button"
+            role="tab"
             aria-selected={view === 'validation'}
             active={view === 'validation'}
             onClick={() => setView('validation')}
@@ -147,10 +194,16 @@ export function ScenarioPanel() {
           </Tab>
         </TabRow>
 
-        {scenario && view === 'timeline' && <SplitTimeline assignments={scenario.rows} />}
-        {scenario && view === 'validation' && (
-          <ValidationPanel assignments={scenario.rows} />
+        {scenario && view === 'timeline' && <SplitTimeline assignments={displayRows} />}
+
+        {scenario && view === 'editor' && (
+          <EditorGrid>
+            <EditorCanvas assignments={editorRows} />
+            <SelectedVesselPanel />
+          </EditorGrid>
         )}
+
+        {scenario && view === 'validation' && <ValidationPanel assignments={displayRows} />}
       </Stack>
     </Card>
   );
