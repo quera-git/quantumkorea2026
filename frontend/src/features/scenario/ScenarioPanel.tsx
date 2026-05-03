@@ -1,7 +1,8 @@
 import styled from '@emotion/styled';
-import { Layers, Move, ShieldCheck } from 'lucide-react';
+import { GitCommitHorizontal, Layers, Move, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { AuditPanel } from '@/features/audit/AuditPanel';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
 import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
@@ -82,7 +83,7 @@ const EditorGrid = styled.div(({ theme }) => ({
   },
 }));
 
-type View = 'timeline' | 'editor' | 'validation';
+type View = 'timeline' | 'editor' | 'audit' | 'validation';
 
 export function ScenarioPanel() {
   const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
@@ -185,6 +186,16 @@ export function ScenarioPanel() {
           <Tab
             type="button"
             role="tab"
+            aria-selected={view === 'audit'}
+            active={view === 'audit'}
+            onClick={() => setView('audit')}
+          >
+            <GitCommitHorizontal size={14} aria-hidden="true" />
+            Audit
+          </Tab>
+          <Tab
+            type="button"
+            role="tab"
             aria-selected={view === 'validation'}
             active={view === 'validation'}
             onClick={() => setView('validation')}
@@ -202,6 +213,8 @@ export function ScenarioPanel() {
             <SelectedVesselPanel />
           </EditorGrid>
         )}
+
+        {scenario && view === 'audit' && <AuditPanel />}
 
         {scenario && view === 'validation' && <ValidationPanel assignments={displayRows} />}
       </Stack>
