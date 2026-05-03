@@ -1,16 +1,24 @@
 import styled from '@emotion/styled';
 import { GitCommitHorizontal, Layers, Move, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
 import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
+import { SearchBar } from '@/features/search/SearchBar';
+import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
-import { SplitTimeline } from '@/features/timeline/SplitTimeline';
 import { Card } from '@/shared/ui/Card';
 import { SectionHeader } from '@/shared/ui/SectionHeader';
+import { Skeleton } from '@/shared/ui/Skeleton';
 import { Stack } from '@/shared/ui/Stack';
+
+// Plotly 가 들어간 차트는 별도 청크로 분리.
+// 사용자가 '타임라인' 탭을 열 때만 plotly basic-dist-min 다운로드 (~1MB).
+const SplitTimeline = lazy(() =>
+  import('@/features/timeline/SplitTimeline').then((m) => ({ default: m.SplitTimeline })),
+);
 
 import { SCENARIO_LIST, loadScenario } from './scenarioLoader';
 
@@ -88,6 +96,7 @@ type View = 'timeline' | 'editor' | 'audit' | 'validation';
 export function ScenarioPanel() {
   const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
   const [view, setView] = useState<View>('timeline');
+  const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
   const scenario = useMemo(() => {
     if (!activeId) return null;
@@ -119,14 +128,24 @@ export function ScenarioPanel() {
     }
   }, [scenario, editorScenarioId, loadSnapshot]);
 
-  // 검증 / 타임라인 표시 데이터: 에디터 모드에서 편집 중이면 currentRows, 아니면 원본.
-  const displayRows = useMemo(() => {
+  // 시나리오 변경 시 필터 초기화 (route 셋이 다른 시나리오에서 의미 없음).
+  useEffect(() => {
+    setFilter({ ...DEFAULT_FILTER, routes: new Set() });
+  }, [activeId]);
+
+  // 검증/타임라인/Audit 표시 데이터:
+  //   - 에디터에 dirty 가 있으면 currentRows 사용 (편집 반영).
+  //   - 그 외엔 원본 시나리오 rows.
+  // 둘 다 SearchBar 필터를 통과시킨 후 표시.
+  const baseRows = useMemo(() => {
     if (!scenario) return [];
     if (editorScenarioId === scenario.scenarioId && editorRows.length > 0) {
       return editorRows;
     }
     return scenario.rows;
   }, [scenario, editorScenarioId, editorRows]);
+
+  const displayRows = useMemo(() => applyFilter(baseRows, filter), [baseRows, filter]);
 
   return (
     <Card>
@@ -160,6 +179,15 @@ export function ScenarioPanel() {
             {scenario && <span>scenarioId={scenario.scenarioId}</span>}
             {isDirty && <span className="dirty">● 편집됨</span>}
           </Stats>
+        )}
+
+        {scenario && (
+          <SearchBar
+            source={baseRows}
+            filter={filter}
+            onChange={setFilter}
+            passedCount={displayRows.length}
+          />
         )}
 
         <TabRow role="tablist">
@@ -205,7 +233,11 @@ export function ScenarioPanel() {
           </Tab>
         </TabRow>
 
-        {scenario && view === 'timeline' && <SplitTimeline assignments={displayRows} />}
+        {scenario && view === 'timeline' && (
+          <Suspense fallback={<Skeleton height={680} radius="md" />}>
+            <SplitTimeline assignments={displayRows} />
+          </Suspense>
+        )}
 
         {scenario && view === 'editor' && (
           <EditorGrid>

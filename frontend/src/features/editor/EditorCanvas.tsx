@@ -13,6 +13,7 @@ import { TERMINAL_LAYOUT, inferBerthFromY, type Terminal } from '@/shared/domain
 import type { Assignment } from '@/shared/domain/types';
 
 import { useEditorStore, type MovePatch } from './editor.store';
+import { useEditorIssueIndex } from './useValidationIssues';
 
 const TERMINAL_ORDER: Terminal[] = ['SND', 'GAM'];
 
@@ -104,6 +105,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
   const applyMove = useEditorStore((s) => s.applyMove);
   const selectRow = useEditorStore((s) => s.selectRow);
   const selectedRowId = useEditorStore((s) => s.selectedRowId);
+  const { invalidRowIds, messagesByRowId } = useEditorIssueIndex();
 
   // 드래그 중 표시할 임시 패치(터미널별×rowId 단위).
   const [drafts, setDrafts] = useState<Record<string, DraftPatch>>({});
@@ -407,13 +409,30 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
               const h = Math.max(8, Math.abs(e - f) * pxPerMeter);
               const isSel = selectedRowId === r.rowId;
               const isDragging = drafts[r.rowId] != null;
-              const fill = colorForVoyage(r.voyage, terminal, isSel);
+              const isInvalid = invalidRowIds.has(r.rowId);
+              const issues = messagesByRowId.get(r.rowId);
+              const fill = isInvalid
+                ? 'rgba(220, 38, 38, 0.30)'
+                : colorForVoyage(r.voyage, terminal, isSel);
+              // 우선순위: 선택 > invalid > 드래그 중 > 기본
               const stroke = isSel
                 ? 'rgba(37, 99, 235, 0.95)'
-                : isDragging
-                  ? 'rgba(37, 99, 235, 0.85)'
-                  : 'rgba(15,23,42,0.5)';
+                : isInvalid
+                  ? 'rgba(220, 38, 38, 0.95)'
+                  : isDragging
+                    ? 'rgba(37, 99, 235, 0.85)'
+                    : 'rgba(15,23,42,0.5)';
+              const strokeWidth = isSel || isInvalid ? 2 : 1;
               const label = r.voyage || r.vessel || '';
+
+              const tooltipBase = `${terminal}-${r.berth} · ${r.voyage}
+${r.vessel ?? ''} · ${r.company ?? ''}
+start=${(r.start ?? '').replace('T', ' ')}
+end=${(r.end ?? '').replace('T', ' ')}
+f=${r.f}m e=${r.e}m`;
+              const tooltip = issues
+                ? `${tooltipBase}\n\n⚠ ${issues.join('\n⚠ ')}`
+                : tooltipBase;
 
               return (
                 <g key={`${terminal}-bar-${r.rowId}`}>
@@ -424,17 +443,28 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                     height={h}
                     fill={fill}
                     stroke={stroke}
-                    strokeWidth={isSel ? 2 : 1}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={isInvalid ? '4 3' : undefined}
                     rx={4}
                     ry={4}
                     cursor={disabled ? 'default' : 'grab'}
                     onPointerDown={startDrag(r)}
                     style={{ touchAction: 'none' }}
                   >
-                    <title>
-                      {`${terminal}-${r.berth} · ${r.voyage}\n${r.vessel ?? ''} · ${r.company ?? ''}\nstart=${(r.start ?? '').replace('T', ' ')}\nend=${(r.end ?? '').replace('T', ' ')}\nf=${r.f}m e=${r.e}m`}
-                    </title>
+                    <title>{tooltip}</title>
                   </rect>
+                  {isInvalid && (
+                    <text
+                      x={xS + 4}
+                      y={yTop + 12}
+                      fontSize={11}
+                      fontWeight={700}
+                      fill="rgba(185, 28, 28, 0.95)"
+                      pointerEvents="none"
+                    >
+                      ⚠
+                    </text>
+                  )}
                   <text
                     x={xS + w / 2}
                     y={yTop + h / 2}

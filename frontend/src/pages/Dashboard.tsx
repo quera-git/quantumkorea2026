@@ -9,6 +9,7 @@ import { SolverPanel } from '@/features/jobs/SolverPanel';
 import { ComparePanel } from '@/features/results/ComparePanel';
 import { ScenarioPanel } from '@/features/scenario/ScenarioPanel';
 import { AppBar } from '@/shared/ui/AppBar';
+import { ShortcutModal } from '@/shared/ui/ShortcutModal';
 import { Stack } from '@/shared/ui/Stack';
 
 const Page = styled.div(({ theme }) => ({
@@ -91,6 +92,7 @@ export default function Dashboard() {
   return (
     <Page>
       <AppBar />
+      <ShortcutModal />
       <Container>
         <Stack gap={6}>
           <Section>

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import Plot from 'react-plotly.js';
 import type { Annotations, Layout, PlotData, Shape } from 'plotly.js';
 
+import { Plot } from '@/shared/ui/Plot';
 import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
 import type { Assignment } from '@/shared/domain/types';
 

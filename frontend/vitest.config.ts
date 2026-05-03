@@ -13,11 +13,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   plugins: [react({ jsxImportSource: '@emotion/react' })],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      // Plotly 는 jsdom 부담이 크다. 테스트에서는 stub 컴포넌트로 갈아끼운다.
-      'react-plotly.js': path.resolve(__dirname, 'src/test/mocks/react-plotly.tsx'),
-    },
+    // 더 구체적인 alias 가 먼저 와야 한다. `@` 가 먼저 오면 `@/shared/ui/Plot` 를
+    // src/shared/ui/Plot 로 풀어버려 mock 으로 못 빠진다.
+    alias: [
+      {
+        find: '@/shared/ui/Plot',
+        replacement: path.resolve(__dirname, 'src/test/mocks/react-plotly.tsx'),
+      },
+      {
+        find: /^react-plotly\.js(\/.*)?$/,
+        replacement: path.resolve(__dirname, 'src/test/mocks/react-plotly.tsx'),
+      },
+      { find: '@', replacement: path.resolve(__dirname, 'src') },
+    ],
   },
   test: {
     environment: 'jsdom',

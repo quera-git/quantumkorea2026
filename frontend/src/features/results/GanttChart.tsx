@@ -1,6 +1,6 @@
-import Plot from 'react-plotly.js';
 import type { Layout, PlotData } from 'plotly.js';
 
+import { Plot } from '@/shared/ui/Plot';
 import type { ScheduleEntry } from '@/shared/types/schema';
 
 interface Props {
