@@ -1,222 +1,145 @@
-import { useEffect, useRef, useState } from 'react';
-import { apiClient } from '../api/client';
-import GanttChart from '../components/GanttChart';
-import type {
-  BPTRecord, JobAccepted, OptimizeResult, SolverName,
-} from '../types/schema';
+import { keyframes } from '@emotion/react';
+import styled from '@emotion/styled';
+import { useState } from 'react';
 
-// 폴링 간격(ms) — 솔버는 분 단위 작업이라 5초면 충분.
-const POLL_INTERVAL_MS = 5000;
+import { BptPanel } from '@/features/bpt/BptPanel';
+import { JobProgressCard } from '@/features/jobs/JobProgressCard';
+import { JobsListPanel } from '@/features/jobs/JobsListPanel';
+import { SolverPanel } from '@/features/jobs/SolverPanel';
+import { ComparePanel } from '@/features/results/ComparePanel';
+import { ScenarioPanel } from '@/features/scenario/ScenarioPanel';
+import { AppBar } from '@/shared/ui/AppBar';
+import { Stack } from '@/shared/ui/Stack';
 
-// 데모용 샘플 BPT (3척, 12시간 freeze 윈도우 내). 빠른 라운드트립 검증용.
-const SAMPLE_BPT: BPTRecord[] = [
-  { vessel_id: 'D-1', length: 140, eta_int: 0, etb_int: 0, etd_int: 8,
-    berth_position: 100, yangha_van: 30, seonjeok_van: 30 },
-  { vessel_id: 'D-2', length: 160, eta_int: 1, etb_int: 1, etd_int: 10,
-    berth_position: 300, yangha_van: 40, seonjeok_van: 40 },
-  { vessel_id: 'D-3', length: 180, eta_int: 3, etb_int: 3, etd_int: 11,
-    berth_position: 600, yangha_van: 50, seonjeok_van: 50 },
-];
+const Page = styled.div(({ theme }) => ({
+  minHeight: '100vh',
+  background: theme.color.bg,
+}));
 
-type Phase = 'idle' | 'submitting' | 'running' | 'done' | 'error';
+const Container = styled.div(({ theme }) => ({
+  maxWidth: 1280,
+  margin: '0 auto',
+  padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+
+  '@media (max-width: 768px)': {
+    padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
+  },
+}));
+
+const PageTitle = styled.h1(({ theme }) => ({
+  margin: 0,
+  fontSize: theme.font.size.title,
+  fontWeight: theme.font.weight.bold,
+  color: theme.color.text,
+  letterSpacing: theme.font.letter.tight,
+}));
+
+const PageSubtitle = styled.p(({ theme }) => ({
+  margin: 0,
+  marginTop: theme.spacing(2),
+  fontSize: theme.font.size.md,
+  color: theme.color.textMuted,
+  maxWidth: 720,
+  lineHeight: theme.font.lineHeight.normal,
+}));
+
+const TopGrid = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: '1fr 380px',
+  gap: theme.spacing(4),
+  alignItems: 'start',
+
+  '@media (max-width: 1024px)': {
+    gridTemplateColumns: '1fr',
+  },
+}));
+
+const fadeUp = keyframes`
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+`;
+
+const Section = styled.div<{ delay?: number }>(({ theme, delay = 0 }) => ({
+  animation: `${fadeUp} ${theme.motion.duration.slow} ${theme.motion.easing.enter} both`,
+  animationDelay: `${delay}ms`,
+}));
+
+const PlaceholderCard = styled.div(({ theme }) => ({
+  border: `1px dashed ${theme.color.borderSubtle}`,
+  borderRadius: theme.radius.xl,
+  padding: theme.spacing(6),
+  fontSize: theme.font.size.sm,
+  color: theme.color.textMuted,
+  background: theme.color.surfaceAlt,
+  display: 'grid',
+  placeItems: 'center',
+  textAlign: 'center',
+  minHeight: 160,
+}));
 
 export default function Dashboard() {
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [solver, setSolver] = useState<SolverName>('gurobi');
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [result, setResult] = useState<OptimizeResult | null>(null);
-  const [elapsed, setElapsed] = useState<number>(0);
-  const [error, setError] = useState<string | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [leftJobId, setLeftJobId] = useState<string | null>(null);
+  const [rightJobId, setRightJobId] = useState<string | null>(null);
 
-  const startedAtRef = useRef<number | null>(null);
-
-  // 헬스체크 (마운트 시 1회)
-  useEffect(() => {
-    apiClient
-      .get('/health')
-      .then(() => setHealthError(null))
-      .catch((e) => setHealthError(`백엔드 연결 실패: ${e.message}`));
-  }, []);
-
-  // running 동안 1초마다 elapsed 갱신 + 5초마다 결과 폴링
-  useEffect(() => {
-    if (phase !== 'running' || !jobId) return;
-
-    const tick = setInterval(() => {
-      if (startedAtRef.current !== null) {
-        setElapsed((Date.now() - startedAtRef.current) / 1000);
-      }
-    }, 1000);
-
-    const poll = setInterval(async () => {
-      try {
-        const { data } = await apiClient.get<OptimizeResult>(`/results/${jobId}`);
-        if (data.status === 'succeeded') {
-          setResult(data);
-          setPhase('done');
-        } else if (data.status === 'failed') {
-          setError(data.error_message ?? '작업 실패 (사유 미지정)');
-          setPhase('error');
-        }
-        // running 이면 계속 폴링
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(`폴링 실패: ${msg}`);
-        setPhase('error');
-      }
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      clearInterval(tick);
-      clearInterval(poll);
-    };
-  }, [phase, jobId]);
-
-  const handleSubmit = async () => {
-    setPhase('submitting');
-    setError(null);
-    setResult(null);
-    setElapsed(0);
-    try {
-      const { data } = await apiClient.post<JobAccepted>('/jobs/', {
-        bpt_records: SAMPLE_BPT,
-        solver,
-        planning_start_time: 0,
-      });
-      setJobId(data.job_id);
-      startedAtRef.current = Date.now();
-      setPhase('running');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`제출 실패: ${msg}`);
-      setPhase('error');
-    }
-  };
-
-  const handleReset = () => {
-    setPhase('idle');
-    setJobId(null);
-    setResult(null);
-    setElapsed(0);
-    setError(null);
-    startedAtRef.current = null;
-  };
+  function handleSubmitted(jobId: string) {
+    setActiveJobId(jobId);
+    if (!leftJobId) setLeftJobId(jobId);
+    else if (!rightJobId) setRightJobId(jobId);
+  }
 
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 1200 }}>
-      <h1>항만 물류 양자 최적화</h1>
+    <Page>
+      <AppBar />
+      <Container>
+        <Stack gap={6}>
+          <Section>
+            <Stack gap={1}>
+              <PageTitle>선석 배정 양자 최적화</PageTitle>
+              <PageSubtitle>
+                BPT 데이터 적재 → 솔버 제출 → 결과 폴링 → 두 작업 결과 비교 + Streamlit 풍부 도메인
+                시각화 (MVP-1).
+              </PageSubtitle>
+            </Stack>
+          </Section>
 
-      {healthError && (
-        <p style={{ color: 'crimson' }}>⚠️ {healthError}</p>
-      )}
+          <Section delay={40}>
+            <BptPanel />
+          </Section>
 
-      {/* --- 제출 폼 (idle / submitting) --- */}
-      {(phase === 'idle' || phase === 'submitting') && (
-        <section style={card}>
-          <h2>새 작업 제출</h2>
-          <p style={{ color: '#666' }}>
-            데모용 샘플 BPT 3척으로 즉시 실행됩니다. 실 데이터 업로드 폼은 다음 단계에서 추가됩니다.
-          </p>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ marginRight: 8, fontWeight: 600 }}>솔버:</label>
-            {(['gurobi', 'cqm', 'hybrid'] as const).map((s) => (
-              <label key={s} style={{ marginRight: 16 }}>
-                <input
-                  type="radio"
-                  name="solver"
-                  value={s}
-                  checked={solver === s}
-                  onChange={() => setSolver(s)}
-                  disabled={phase === 'submitting'}
-                />
-                {' '}{s}
-              </label>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={phase === 'submitting'}
-            style={btnPrimary}
-          >
-            {phase === 'submitting' ? '제출 중...' : '최적화 실행'}
-          </button>
-        </section>
-      )}
+          <Section delay={80}>
+            <TopGrid>
+              <SolverPanel onSubmitted={handleSubmitted} />
+              {activeJobId ? (
+                <JobProgressCard jobId={activeJobId} />
+              ) : (
+                <PlaceholderCard>
+                  제출된 작업이 없습니다.
+                  <br />
+                  좌측에서 솔버를 실행하면 진행 상태가 여기에 표시됩니다.
+                </PlaceholderCard>
+              )}
+            </TopGrid>
+          </Section>
 
-      {/* --- 실행 중 --- */}
-      {phase === 'running' && (
-        <section style={card}>
-          <h2>⏳ 최적화 실행 중</h2>
-          <p>job_id: <code>{jobId}</code></p>
-          <p style={{ fontSize: 24, fontWeight: 700 }}>
-            경과 시간: {elapsed.toFixed(1)}s
-          </p>
-          <p style={{ color: '#666' }}>
-            {POLL_INTERVAL_MS / 1000}초마다 백엔드에 결과를 확인합니다.
-            솔버에 따라 분 단위가 소요될 수 있습니다.
-          </p>
-        </section>
-      )}
+          <Section delay={120}>
+            <JobsListPanel
+              leftJobId={leftJobId}
+              rightJobId={rightJobId}
+              onSelectLeft={setLeftJobId}
+              onSelectRight={setRightJobId}
+            />
+          </Section>
 
-      {/* --- 완료 --- */}
-      {phase === 'done' && result && (
-        <section style={card}>
-          <h2>✅ 최적화 완료</h2>
-          <p>
-            <strong>솔버:</strong> {solver} {' | '}
-            <strong>목적함수:</strong> {result.objective_value?.toFixed(2) ?? '-'} {' | '}
-            <strong>총 소요:</strong> {result.elapsed_seconds?.toFixed(2) ?? '-'}s {' | '}
-            <strong>스케줄:</strong> {result.schedule.length}척
-          </p>
-          <button type="button" onClick={handleReset} style={btnSecondary}>
-            새 작업
-          </button>
-          <div style={{ marginTop: 16 }}>
-            <GanttChart schedule={result.schedule} />
-          </div>
-        </section>
-      )}
+          <Section delay={160}>
+            <ComparePanel leftJobId={leftJobId} rightJobId={rightJobId} />
+          </Section>
 
-      {/* --- 에러 --- */}
-      {phase === 'error' && (
-        <section style={{ ...card, borderColor: 'crimson' }}>
-          <h2 style={{ color: 'crimson' }}>❌ 작업 실패</h2>
-          <p>{error}</p>
-          <button type="button" onClick={handleReset} style={btnSecondary}>
-            다시 시도
-          </button>
-        </section>
-      )}
-    </div>
+          <Section delay={200}>
+            <ScenarioPanel />
+          </Section>
+        </Stack>
+      </Container>
+    </Page>
   );
 }
-
-const card: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: '#fafafa',
-};
-
-const btnPrimary: React.CSSProperties = {
-  padding: '8px 16px',
-  fontSize: 16,
-  background: '#2563eb',
-  color: 'white',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-
-const btnSecondary: React.CSSProperties = {
-  padding: '6px 12px',
-  fontSize: 14,
-  background: '#f3f4f6',
-  color: '#111',
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
