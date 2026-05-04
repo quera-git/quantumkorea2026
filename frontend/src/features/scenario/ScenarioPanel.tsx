@@ -1,8 +1,9 @@
 import styled from '@emotion/styled';
-import { GitCommitHorizontal, Layers, Move, ShieldCheck } from 'lucide-react';
+import { Cpu, GitCommitHorizontal, Layers, Move, ShieldCheck } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
+import { EditorActionsBar } from '@/features/editor/EditorActionsBar';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
 import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
@@ -10,6 +11,7 @@ import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
 import { Card } from '@/shared/ui/Card';
+import { EmptyState } from '@/shared/ui/EmptyState';
 import { SectionHeader } from '@/shared/ui/SectionHeader';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Stack } from '@/shared/ui/Stack';
@@ -91,7 +93,49 @@ const EditorGrid = styled.div(({ theme }) => ({
   },
 }));
 
-type View = 'timeline' | 'editor' | 'audit' | 'validation';
+const ResultDot = styled.span(({ theme }) => ({
+  display: 'inline-block',
+  width: 7,
+  height: 7,
+  borderRadius: '50%',
+  background: theme.color.success,
+  marginLeft: 2,
+}));
+
+const ResultMeta = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+  gap: theme.spacing(2),
+  marginBottom: theme.spacing(3),
+
+  '& .stat': {
+    padding: theme.spacing(3),
+    background: theme.color.surfaceAlt,
+    borderRadius: theme.radius.md,
+  },
+  '& .label': {
+    fontSize: theme.font.size.xs,
+    color: theme.color.textSubtle,
+    textTransform: 'uppercase',
+    fontWeight: theme.font.weight.semibold,
+    letterSpacing: theme.font.letter.wide,
+  },
+  '& .value': {
+    fontSize: theme.font.size.xl,
+    fontWeight: theme.font.weight.bold,
+    fontFamily: theme.font.mono,
+    color: theme.color.text,
+    letterSpacing: theme.font.letter.tight,
+  },
+  '& .small': {
+    fontSize: theme.font.size.xs,
+    fontFamily: theme.font.mono,
+    color: theme.color.textSubtle,
+    wordBreak: 'break-all',
+  },
+}));
+
+type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result';
 
 export function ScenarioPanel() {
   const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
@@ -120,6 +164,7 @@ export function ScenarioPanel() {
   const editorScenarioId = useEditorStore((s) => s.scenarioId);
   const editorRows = useEditorStore((s) => s.currentRows);
   const isDirty = useEditorStore((s) => s.isDirty());
+  const lastResult = useEditorStore((s) => s.lastResult);
 
   useEffect(() => {
     if (!scenario) return;
@@ -231,6 +276,17 @@ export function ScenarioPanel() {
             <ShieldCheck size={14} aria-hidden="true" />
             검증 결과
           </Tab>
+          <Tab
+            type="button"
+            role="tab"
+            aria-selected={view === 'result'}
+            active={view === 'result'}
+            onClick={() => setView('result')}
+          >
+            <Cpu size={14} aria-hidden="true" />
+            솔버 결과
+            {lastResult && <ResultDot aria-label="결과 있음" />}
+          </Tab>
         </TabRow>
 
         {scenario && view === 'timeline' && (
@@ -240,16 +296,93 @@ export function ScenarioPanel() {
         )}
 
         {scenario && view === 'editor' && (
-          <EditorGrid>
-            <EditorCanvas assignments={editorRows} />
-            <SelectedVesselPanel />
-          </EditorGrid>
+          <Stack gap={3}>
+            <EditorActionsBar />
+            <EditorGrid>
+              <EditorCanvas assignments={editorRows} />
+              <SelectedVesselPanel />
+            </EditorGrid>
+          </Stack>
         )}
 
         {scenario && view === 'audit' && <AuditPanel />}
 
         {scenario && view === 'validation' && <ValidationPanel assignments={displayRows} />}
+
+        {scenario && view === 'result' && <ResultView />}
       </Stack>
     </Card>
+  );
+}
+
+function ResultView() {
+  const lastResult = useEditorStore((s) => s.lastResult);
+  const clearResult = useEditorStore((s) => s.clearResult);
+
+  if (!lastResult) {
+    return (
+      <EmptyState
+        icon={Cpu}
+        title="아직 솔버 결과가 없습니다"
+        description="편집 탭에서 '편집본 솔버 제출' 을 눌러 솔버를 돌리면 stitch 된 결과가 여기에 표시됩니다."
+      />
+    );
+  }
+
+  return (
+    <Stack gap={3}>
+      <ResultMeta>
+        <div className="stat">
+          <div className="label">solver</div>
+          <div className="value">{lastResult.solver.toUpperCase()}</div>
+        </div>
+        <div className="stat">
+          <div className="label">objective</div>
+          <div className="value">{lastResult.objectiveValue?.toFixed(2) ?? '-'}</div>
+        </div>
+        <div className="stat">
+          <div className="label">elapsed</div>
+          <div className="value">
+            {lastResult.elapsedSeconds != null
+              ? `${lastResult.elapsedSeconds.toFixed(1)}s`
+              : '-'}
+          </div>
+        </div>
+        <div className="stat">
+          <div className="label">stitched rows</div>
+          <div className="value">{lastResult.rows.length}</div>
+        </div>
+        <div className="stat">
+          <div className="label">unmatched</div>
+          <div className="value" style={lastResult.unmatched.length ? { color: '#dc2626' } : undefined}>
+            {lastResult.unmatched.length}
+          </div>
+        </div>
+        <div className="stat">
+          <div className="label">job_id</div>
+          <div className="small">{lastResult.jobId}</div>
+        </div>
+      </ResultMeta>
+      <Suspense fallback={<Skeleton height={680} radius="md" />}>
+        <SplitTimeline assignments={lastResult.rows} />
+      </Suspense>
+      <Stack direction="row" gap={2}>
+        <button
+          type="button"
+          onClick={clearResult}
+          style={{
+            padding: '4px 10px',
+            fontSize: 12,
+            background: 'transparent',
+            border: '1px solid #cdd2e0',
+            borderRadius: 6,
+            cursor: 'pointer',
+            color: '#525866',
+          }}
+        >
+          결과 비우기
+        </button>
+      </Stack>
+    </Stack>
   );
 }

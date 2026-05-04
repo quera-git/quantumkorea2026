@@ -21,6 +21,24 @@ export interface MovePatch {
   berth: number;
 }
 
+/** 솔버 결과를 풍부 도메인으로 stitch 한 결과. */
+export interface SolverResultSlice {
+  jobId: string;
+  solver: 'gurobi' | 'cqm' | 'hybrid';
+  /** stitch 된 풍부 결과 행. originals 와 같은 voyage 에 같은 메타. */
+  rows: Assignment[];
+  /** stitch 시점의 reference (h=0 의 절대 시각). */
+  referenceIso: string;
+  /** 매칭 안 된 vessel_id 목록 (보통 빈 배열). */
+  unmatched: string[];
+  /** 솔버가 보고한 objective. */
+  objectiveValue: number | null;
+  /** 솔버 소요 (초). */
+  elapsedSeconds: number | null;
+  /** stitch 완료 시점. */
+  storedAt: string;
+}
+
 interface EditorState {
   /** 마지막으로 loadSnapshot 한 시나리오 id (스냅샷 키). */
   scenarioId: string | null;
@@ -33,6 +51,9 @@ interface EditorState {
   /** undo/redo 스택. 각 항목은 currentRows 의 깊은 복사. */
   history: Assignment[][];
   historyIndex: number;
+
+  /** 마지막 solver 결과 (있으면). 시나리오/편집 변경 시 stale 안 되도록 reference 같이 보관. */
+  lastResult: SolverResultSlice | null;
 
   // ---- selectors (computed via getter) ----
   /** dirty: originalRows 와 currentRows 가 다르면 true. */
@@ -57,6 +78,11 @@ interface EditorState {
   redo: () => void;
   /** currentRows 를 originalRows 로 되돌림 + history 초기화. */
   reset: () => void;
+
+  /** solver 결과 stitch 후 저장. */
+  setResult: (slice: SolverResultSlice) => void;
+  /** solver 결과 비우기 (시나리오 변경 등). */
+  clearResult: () => void;
 }
 
 function deepCloneRows(rows: Assignment[]): Assignment[] {
@@ -92,6 +118,7 @@ export const useEditorStore = create<EditorState>()(
       selectedRowId: null,
       history: [],
       historyIndex: -1,
+      lastResult: null,
 
       isDirty: () => !rowsEqual(get().originalRows, get().currentRows),
       canUndo: () => get().historyIndex > 0,
@@ -111,6 +138,8 @@ export const useEditorStore = create<EditorState>()(
           selectedRowId: null,
           history: [deepCloneRows(rows)],
           historyIndex: 0,
+          // 시나리오 변경 시 이전 솔버 결과는 stale 이므로 clear.
+          lastResult: null,
         });
       },
 
@@ -191,6 +220,9 @@ export const useEditorStore = create<EditorState>()(
           selectedRowId: null,
         });
       },
+
+      setResult: (slice) => set({ lastResult: slice }),
+      clearResult: () => set({ lastResult: null }),
     }),
     { name: 'editor-store' },
   ),
