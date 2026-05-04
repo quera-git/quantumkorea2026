@@ -3,6 +3,7 @@ import { Download, GitCommitHorizontal, Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 
 import { useEditorStore } from '@/features/editor/editor.store';
+import type { Assignment } from '@/shared/domain/types';
 import { Button } from '@/shared/ui/Button';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { Stack } from '@/shared/ui/Stack';
@@ -156,10 +157,29 @@ function renderCellValue(c: ChangedField, side: 'before' | 'after'): string {
   return String(v);
 }
 
-export function AuditPanel() {
-  const original = useEditorStore((s) => s.originalRows);
-  const current = useEditorStore((s) => s.currentRows);
-  const isDirty = useEditorStore((s) => s.isDirty());
+interface AuditPanelProps {
+  /** 비교 기준(=before). 미지정 시 editor store 의 originalRows. */
+  original?: Assignment[];
+  /** 비교 대상(=after). 미지정 시 editor store 의 currentRows. */
+  current?: Assignment[];
+  /** "원본과 동일" 표시 여부. 미지정 시 editor store 의 dirty 로 추론. */
+  isDirty?: boolean;
+}
+
+export function AuditPanel({
+  original: originalProp,
+  current: currentProp,
+  isDirty: isDirtyProp,
+}: AuditPanelProps = {}) {
+  // props 가 들어오면 그것 우선, 아니면 editor store fallback.
+  const storeOriginal = useEditorStore((s) => s.originalRows);
+  const storeCurrent = useEditorStore((s) => s.currentRows);
+  const storeDirty = useEditorStore((s) => s.isDirty());
+
+  const original = originalProp ?? storeOriginal;
+  const current = currentProp ?? storeCurrent;
+  const isDirty = isDirtyProp ?? storeDirty;
+
   const toast = useToast();
 
   const diffs: RowDiff[] = useMemo(() => diffRows(original, current), [original, current]);

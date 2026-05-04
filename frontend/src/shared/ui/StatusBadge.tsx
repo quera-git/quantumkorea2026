@@ -73,7 +73,9 @@ export function StatusBadge({ status }: Props) {
           background: ${palette.dot};
           color: ${palette.dot};
           flex-shrink: 0;
-          animation: ${animated ? `${pulse} 1.6s ${theme.motion.easing.standard} infinite` : 'none'};
+          animation: ${animated
+            ? css`${pulse} 1.6s ${theme.motion.easing.standard} infinite`
+            : 'none'};
         `}
       />
       {STATUS_TO_LABEL[status]}
