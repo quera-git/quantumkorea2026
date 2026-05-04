@@ -2,11 +2,28 @@ import styled from '@emotion/styled';
 import { Cpu, Loader2, Play, X } from 'lucide-react';
 import { useState } from 'react';
 
+import { useEditorStore } from '@/features/editor/editor.store';
 import { useEditorSubmit } from '@/features/solver-adapter/useEditorSubmit';
 import { Button } from '@/shared/ui/Button';
+import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { StatusBadge } from '@/shared/ui/StatusBadge';
 import { Stack } from '@/shared/ui/Stack';
 import { SOLVER_NAMES, type SolverName } from '@/shared/types/schema';
+
+const SOLVER_WARNING: Record<SolverName, { warn: string; cost: string }> = {
+  cqm: {
+    warn: 'D-Wave Leap 시간을 소모합니다',
+    cost: '실 비용 발생 (학술 무료 한도 내라도 분 단위 차감)',
+  },
+  hybrid: {
+    warn: 'D-Wave Leap 시간을 소모합니다',
+    cost: '실 비용 발생 (학술 무료 한도 내라도 분 단위 차감)',
+  },
+  gurobi: {
+    warn: 'Gurobi 라이선스 검증이 발생합니다',
+    cost: '도커 환경의 단일 머신 학술 라이선스는 거부될 가능성 있음 (로그 확인 권장)',
+  },
+};
 
 const Bar = styled.div(({ theme }) => ({
   display: 'flex',
@@ -77,18 +94,47 @@ const Notice = styled.div<{ tone: 'warning' | 'danger' }>(({ theme, tone }) => (
   border: `1px solid ${tone === 'danger' ? theme.color.danger : theme.color.warning}33`,
 }));
 
+type Source = 'edited' | 'original';
+
 export function EditorActionsBar() {
   const [solver, setSolver] = useState<SolverName>('cqm');
+  const [confirmSource, setConfirmSource] = useState<Source | null>(null);
   const submitFlow = useEditorSubmit();
+  const currentRows = useEditorStore((s) => s.currentRows);
+  const originalRows = useEditorStore((s) => s.originalRows);
+  const isDirty = useEditorStore((s) => s.isDirty());
 
   const isBusy =
     submitFlow.isSubmitting ||
     submitFlow.pollingStatus === 'running' ||
     submitFlow.pollingStatus === 'queued';
 
-  const blocking = submitFlow.check.blocking;
-  const warnings = submitFlow.check.warnings;
-  const canSubmit = submitFlow.check.ok && !isBusy;
+  const blockingEdited = submitFlow.checkEdited.blocking;
+  const warningsEdited = submitFlow.checkEdited.warnings;
+  const blockingOriginal = submitFlow.checkOriginal.blocking;
+  const canSubmitEdited = submitFlow.checkEdited.ok && !isBusy;
+  const canSubmitOriginal = submitFlow.checkOriginal.ok && !isBusy;
+
+  function requestSubmit(source: Source) {
+    if (source === 'edited' && !canSubmitEdited) return;
+    if (source === 'original' && !canSubmitOriginal) return;
+    setConfirmSource(source);
+  }
+
+  function confirmSubmit() {
+    if (confirmSource === 'edited') submitFlow.submit(solver);
+    else if (confirmSource === 'original') submitFlow.submitOriginal(solver);
+    setConfirmSource(null);
+  }
+
+  const solverInfo = SOLVER_WARNING[solver];
+  const tone: 'warning' | 'danger' = solver === 'gurobi' ? 'danger' : 'warning';
+  const sourceRowsForConfirm =
+    confirmSource === 'edited'
+      ? currentRows
+      : confirmSource === 'original'
+        ? originalRows
+        : currentRows;
 
   return (
     <Stack gap={2}>
@@ -111,17 +157,28 @@ export function EditorActionsBar() {
         </RadioRow>
 
         <Button
-          onClick={() => submitFlow.submit(solver)}
-          disabled={!canSubmit}
-          aria-label="편집본 솔버 제출"
+          variant="secondary"
+          onClick={() => requestSubmit('original')}
+          disabled={!canSubmitOriginal}
+          aria-label="원본 시나리오 솔버 제출"
+          title="편집 전 원본 시나리오를 솔버에 넣어 결과를 받음. 결과는 ‘편집기로 불러오기’ 로 가져와 위에서 추가 수정 가능."
         >
-          {submitFlow.isSubmitting ? (
+          <Play size={14} aria-hidden="true" /> 원본 → 솔버
+        </Button>
+
+        <Button
+          onClick={() => requestSubmit('edited')}
+          disabled={!canSubmitEdited || !isDirty}
+          aria-label="편집본 솔버 제출"
+          title={isDirty ? '현재 편집된 상태를 솔버에 제출' : '편집한 게 없습니다 (원본과 동일)'}
+        >
+          {submitFlow.isSubmitting && submitFlow.lastSubmitSource === 'edited' ? (
             <>
               <Loader2 size={14} aria-hidden="true" /> 제출 중…
             </>
           ) : (
             <>
-              <Play size={14} aria-hidden="true" /> 편집본 솔버 제출
+              <Play size={14} aria-hidden="true" /> 편집본 → 솔버
             </>
           )}
         </Button>
@@ -146,18 +203,56 @@ export function EditorActionsBar() {
         )}
       </Bar>
 
-      {blocking.length > 0 && (
+      {blockingEdited.length > 0 && (
         <Notice tone="danger" role="alert">
-          ❌ 제출 차단 ({blocking.length}건):{' '}
-          {blocking.slice(0, 2).join(' · ')}
-          {blocking.length > 2 && ` 외 ${blocking.length - 2}건`}
+          ❌ 편집본 제출 차단 ({blockingEdited.length}건):{' '}
+          {blockingEdited.slice(0, 2).join(' · ')}
+          {blockingEdited.length > 2 && ` 외 ${blockingEdited.length - 2}건`}
         </Notice>
       )}
-      {blocking.length === 0 && warnings.length > 0 && (
+      {blockingEdited.length === 0 && warningsEdited.length > 0 && (
         <Notice tone="warning">
-          ⚠ 경고 {warnings.length}건 (제출은 가능): {warnings.slice(0, 2).join(' · ')}
+          ⚠ 편집본 경고 {warningsEdited.length}건 (제출은 가능):{' '}
+          {warningsEdited.slice(0, 2).join(' · ')}
         </Notice>
       )}
+      {blockingOriginal.length > 0 && (
+        <Notice tone="danger" role="alert">
+          ❌ 원본도 어댑터 검증 실패 ({blockingOriginal.length}건):{' '}
+          {blockingOriginal.slice(0, 2).join(' · ')}
+        </Notice>
+      )}
+
+      <ConfirmDialog
+        open={confirmSource !== null}
+        tone={tone}
+        title={`${solver.toUpperCase()} 솔버 제출 확인`}
+        description={
+          <>
+            <strong>입력:</strong>{' '}
+            {confirmSource === 'edited' ? '현재 편집본' : '원본 시나리오 (편집 전)'}.
+            <br />
+            <strong>{solverInfo.warn}.</strong> 한 번 누르면 작업이 큐에 들어가 바로 자원이
+            소모됩니다. {solverInfo.cost}.
+            <br />
+            제출 직전에 한 번 더 확인하세요.
+          </>
+        }
+        detail={
+          <>
+            solver = <strong>{solver.toUpperCase()}</strong>
+            <br />
+            입력 = <strong>{confirmSource === 'edited' ? '편집본' : '원본'}</strong> /
+            BPT 레코드 = <strong>{sourceRowsForConfirm.length}</strong>척
+            <br />
+            예상 소요 = cqm 약 5~30s · hybrid 약 1~5분 · gurobi 라이선스 OK 시 즉시
+          </>
+        }
+        confirmLabel="이대로 제출"
+        cancelLabel="취소"
+        onConfirm={confirmSubmit}
+        onCancel={() => setConfirmSource(null)}
+      />
     </Stack>
   );
 }

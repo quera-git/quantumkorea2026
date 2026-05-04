@@ -15,6 +15,7 @@ import {
   useSubmitJob,
 } from '@/features/jobs/jobs.queries';
 import { extractErrorMessage } from '@/shared/api/client';
+import type { Assignment } from '@/shared/domain/types';
 import { useToast } from '@/shared/ui/Toast';
 import type { SolverName } from '@/shared/types/schema';
 
@@ -37,6 +38,7 @@ export interface SubmitState {
 
 export function useEditorSubmit() {
   const currentRows = useEditorStore((s) => s.currentRows);
+  const originalRows = useEditorStore((s) => s.originalRows);
   const editorScenarioId = useEditorStore((s) => s.scenarioId);
   const setResult = useEditorStore((s) => s.setResult);
   const submit = useSubmitJob();
@@ -45,16 +47,25 @@ export function useEditorSubmit() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [lastSolver, setLastSolver] = useState<SolverName | null>(null);
   const [lastReference, setLastReference] = useState<Date | null>(null);
+  /**
+   * 어떤 입력으로 제출됐는지 (stitch 시 같은 source 의 rows 와 매칭).
+   * - 'edited': currentRows 기반
+   * - 'original': originalRows 기반
+   */
+  const [lastSubmitSource, setLastSubmitSource] = useState<'edited' | 'original'>('edited');
+  /** stitch 시 매칭에 사용할 row 스냅샷 (제출 시점 기준). */
+  const [lastSubmitRows, setLastSubmitRows] = useState<Assignment[] | null>(null);
   /** stitch 처리 1회만. */
   const [stitchedJobIds, setStitchedJobIds] = useState<Set<string>>(new Set());
 
   // 시나리오 바뀌면 진행 중이던 job 추적 종료 + stitch 캐시 리셋.
-  // (다른 시나리오의 currentRows 와 stitch 되는 것 방지)
+  // (다른 시나리오의 rows 와 stitch 되는 것 방지)
   useEffect(() => {
     setActiveJobId(null);
     setStitchedJobIds(new Set());
     setLastSolver(null);
     setLastReference(null);
+    setLastSubmitRows(null);
   }, [editorScenarioId]);
 
   const polling = usePollingJobResult(activeJobId);
@@ -66,10 +77,12 @@ export function useEditorSubmit() {
     if (polling.data.status !== 'succeeded') return;
     if (stitchedJobIds.has(activeJobId)) return;
     if (!lastReference || !lastSolver) return;
+    if (!lastSubmitRows) return;
 
+    // stitch 는 "제출 시점에 보낸 rows" 와 매칭. (편집/원본 어느 source 든 같은 voyage 매칭)
     const { rows, unmatched } = stitchResult(
       polling.data.schedule,
-      currentRows,
+      lastSubmitRows,
       lastReference,
     );
     setResult({
@@ -106,7 +119,7 @@ export function useEditorSubmit() {
     stitchedJobIds,
     lastReference,
     lastSolver,
-    currentRows,
+    lastSubmitRows,
     setResult,
     toast,
   ]);
@@ -123,9 +136,10 @@ export function useEditorSubmit() {
     setActiveJobId(null);
   }, [polling.data, toast]);
 
-  const submitWithSolver = useCallback(
-    (solver: SolverName) => {
-      const check = adapterCheck(currentRows);
+  const submitWithSource = useCallback(
+    (solver: SolverName, source: 'edited' | 'original') => {
+      const sourceRows = source === 'edited' ? currentRows : originalRows;
+      const check = adapterCheck(sourceRows);
       if (!check.ok) {
         toast.notify({
           tone: 'danger',
@@ -141,16 +155,19 @@ export function useEditorSubmit() {
           description: check.warnings[0],
         });
       }
-      const built = buildOptimizeRequest(currentRows, solver);
+      const built = buildOptimizeRequest(sourceRows, solver);
       setLastSolver(solver);
       setLastReference(built.reference);
+      setLastSubmitSource(source);
+      // 제출 시점의 rows snapshot 보관 (이후 currentRows 가 바뀌어도 stitch 일관성).
+      setLastSubmitRows(sourceRows.map((r) => ({ ...r })));
       submit.mutate(built.request, {
         onSuccess: (accepted) => {
           setActiveJobId(accepted.job_id);
           toast.notify({
             tone: 'info',
-            title: '편집본 솔버 제출됨',
-            description: `${solver.toUpperCase()} · ${currentRows.length}척 · job=${accepted.job_id.slice(0, 8)}…`,
+            title: source === 'edited' ? '편집본 솔버 제출됨' : '원본 시나리오 솔버 제출됨',
+            description: `${solver.toUpperCase()} · ${sourceRows.length}척 · job=${accepted.job_id.slice(0, 8)}…`,
           });
         },
         onError: (err) =>
@@ -162,7 +179,16 @@ export function useEditorSubmit() {
       });
       return { check };
     },
-    [currentRows, submit, toast],
+    [currentRows, originalRows, submit, toast],
+  );
+
+  const submit_ = useCallback(
+    (solver: SolverName) => submitWithSource(solver, 'edited'),
+    [submitWithSource],
+  );
+  const submitOriginal = useCallback(
+    (solver: SolverName) => submitWithSource(solver, 'original'),
+    [submitWithSource],
   );
 
   const cancel = useCallback(() => {
@@ -179,13 +205,20 @@ export function useEditorSubmit() {
   })();
 
   return {
-    submit: submitWithSolver,
+    /** 현재 편집본(currentRows) 으로 제출. */
+    submit: submit_,
+    /** 원본 시나리오(originalRows) 그대로 제출. 솔버 결과를 받아 편집기로 가져오는 흐름의 시작점. */
+    submitOriginal,
     cancel,
     isSubmitting: submit.isPending,
     activeJobId,
     pollingStatus: status,
     pollingResult: polling.data,
     pollingError: polling.error ? extractErrorMessage(polling.error) : null,
-    check: adapterCheck(currentRows),
+    /** edited / original 각각의 어댑터 검증 결과. UI 가 두 버튼 disabled 판단에 사용. */
+    checkEdited: adapterCheck(currentRows),
+    checkOriginal: adapterCheck(originalRows),
+    /** 마지막 제출이 어떤 source 였는지. */
+    lastSubmitSource,
   };
 }

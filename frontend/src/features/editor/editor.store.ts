@@ -69,6 +69,12 @@ interface EditorState {
   /** 드래그 commit 또는 직접 patch 적용. */
   applyMove: (rowId: string, patch: MovePatch) => void;
   /**
+   * currentRows 전체를 새 배열로 교체. 솔버 결과를 편집기로 불러올 때 사용.
+   * - originalRows 는 그대로 유지 → audit 비교는 여전히 "최초 원본 vs 현재" 의미.
+   * - history 에 push 되어 undo/redo 가능.
+   */
+  replaceCurrentRows: (rows: Assignment[]) => void;
+  /**
    * 선택 row 를 시간/y 만큼 미세 이동.
    * dMinutes/dY 는 원하는 이동량 (snap 적용됨).
    */
@@ -161,6 +167,19 @@ export const useEditorStore = create<EditorState>()(
           currentRows: nextRows,
           history: trimmed,
           historyIndex: trimmed.length - 1,
+        });
+      },
+
+      replaceCurrentRows: (rows) => {
+        const { history, historyIndex } = get();
+        const cloned = deepCloneRows(rows);
+        const trimmed = history.slice(0, historyIndex + 1);
+        trimmed.push(deepCloneRows(rows));
+        set({
+          currentRows: cloned,
+          history: trimmed,
+          historyIndex: trimmed.length - 1,
+          // 선택은 보존하되, 그 rowId 가 새 rows 에 없으면 자연스럽게 selected() 가 null 반환.
         });
       },
 

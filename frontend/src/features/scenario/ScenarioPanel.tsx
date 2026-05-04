@@ -1,5 +1,5 @@
 import styled from '@emotion/styled';
-import { Cpu, GitCommitHorizontal, Layers, Move, ShieldCheck } from 'lucide-react';
+import { Cpu, GitCommitHorizontal, Layers, Move, ShieldCheck, Wand2 } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
@@ -10,11 +10,14 @@ import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
+import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
+import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { SectionHeader } from '@/shared/ui/SectionHeader';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Stack } from '@/shared/ui/Stack';
+import { useToast } from '@/shared/ui/Toast';
 
 // Plotly 가 들어간 차트는 별도 청크로 분리.
 // 사용자가 '타임라인' 탭을 열 때만 plotly basic-dist-min 다운로드 (~1MB).
@@ -318,15 +321,29 @@ export function ScenarioPanel() {
 function ResultView() {
   const lastResult = useEditorStore((s) => s.lastResult);
   const clearResult = useEditorStore((s) => s.clearResult);
+  const replaceCurrentRows = useEditorStore((s) => s.replaceCurrentRows);
+  const [loadConfirmOpen, setLoadConfirmOpen] = useState(false);
+  const toast = useToast();
 
   if (!lastResult) {
     return (
       <EmptyState
         icon={Cpu}
         title="아직 솔버 결과가 없습니다"
-        description="편집 탭에서 '편집본 솔버 제출' 을 눌러 솔버를 돌리면 stitch 된 결과가 여기에 표시됩니다."
+        description="편집 탭에서 '원본 → 솔버' 또는 '편집본 → 솔버' 를 눌러 솔버를 돌리면 stitch 된 결과가 여기에 표시됩니다."
       />
     );
+  }
+
+  function loadIntoEditor() {
+    if (!lastResult) return;
+    replaceCurrentRows(lastResult.rows);
+    setLoadConfirmOpen(false);
+    toast.notify({
+      tone: 'success',
+      title: '솔버 결과를 편집기로 불러왔습니다',
+      description: `${lastResult.rows.length}척이 currentRows 로 교체됨. 편집 탭에서 위에 직접 수정하세요.`,
+    });
   }
 
   return (
@@ -366,23 +383,37 @@ function ResultView() {
       <Suspense fallback={<Skeleton height={680} radius="md" />}>
         <SplitTimeline assignments={lastResult.rows} />
       </Suspense>
-      <Stack direction="row" gap={2}>
-        <button
-          type="button"
-          onClick={clearResult}
-          style={{
-            padding: '4px 10px',
-            fontSize: 12,
-            background: 'transparent',
-            border: '1px solid #cdd2e0',
-            borderRadius: 6,
-            cursor: 'pointer',
-            color: '#525866',
-          }}
-        >
+      <Stack direction="row" gap={2} wrap>
+        <Button onClick={() => setLoadConfirmOpen(true)}>
+          <Wand2 size={14} aria-hidden="true" /> 이 결과를 편집기로 불러오기
+        </Button>
+        <Button variant="ghost" size="sm" onClick={clearResult}>
           결과 비우기
-        </button>
+        </Button>
       </Stack>
+
+      <ConfirmDialog
+        open={loadConfirmOpen}
+        title="솔버 결과를 편집기로 불러오기"
+        description={
+          <>
+            현재 편집 중인 행들이 솔버가 제안한 결과로 <strong>교체</strong>됩니다. 그 위에서
+            추가 수정 가능 (Undo 로 되돌릴 수 있음). 원본 시나리오는 그대로 보존됩니다.
+          </>
+        }
+        detail={
+          <>
+            교체될 행 수 = <strong>{lastResult.rows.length}</strong>척
+            <br />
+            솔버 = <strong>{lastResult.solver.toUpperCase()}</strong> · obj ={' '}
+            {lastResult.objectiveValue?.toFixed(2) ?? '-'}
+          </>
+        }
+        confirmLabel="불러오기"
+        cancelLabel="취소"
+        onConfirm={loadIntoEditor}
+        onCancel={() => setLoadConfirmOpen(false)}
+      />
     </Stack>
   );
 }

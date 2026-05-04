@@ -188,4 +188,31 @@ describe('useEditorStore', () => {
     expect(useEditorStore.getState().isDirty()).toBe(false);
     expect(useEditorStore.getState().currentRows[0]?.f).toBe(0);
   });
+
+  it('replaceCurrentRows: currentRows 교체 + history push + originalRows 보존', () => {
+    useEditorStore.getState().loadSnapshot('s1', [row({ rowId: 'a', voyage: 'V1', f: 0, e: 200 })]);
+    expect(useEditorStore.getState().history).toHaveLength(1);
+
+    const resultRows = [row({ rowId: 'a-result', voyage: 'V1', f: 60, e: 260 })];
+    useEditorStore.getState().replaceCurrentRows(resultRows);
+
+    const s = useEditorStore.getState();
+    expect(s.currentRows).toHaveLength(1);
+    expect(s.currentRows[0]?.rowId).toBe('a-result');
+    expect(s.currentRows[0]?.f).toBe(60);
+    // originalRows 보존
+    expect(s.originalRows[0]?.rowId).toBe('a');
+    expect(s.originalRows[0]?.f).toBe(0);
+    // history push → undo 가능
+    expect(s.canUndo()).toBe(true);
+    expect(s.history).toHaveLength(2);
+  });
+
+  it('replaceCurrentRows 후 undo 하면 직전 currentRows 복귀', () => {
+    useEditorStore.getState().loadSnapshot('s1', [row({ rowId: 'a', f: 0, e: 200 })]);
+    useEditorStore.getState().replaceCurrentRows([row({ rowId: 'b', f: 100, e: 300 })]);
+    expect(useEditorStore.getState().currentRows[0]?.rowId).toBe('b');
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().currentRows[0]?.rowId).toBe('a');
+  });
 });
