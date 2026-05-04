@@ -1,5 +1,6 @@
 import { keyframes } from '@emotion/react';
 import styled from '@emotion/styled';
+import { Database, Layers } from 'lucide-react';
 import { useState } from 'react';
 
 import { BptPanel } from '@/features/bpt/BptPanel';
@@ -9,6 +10,8 @@ import { SolverPanel } from '@/features/jobs/SolverPanel';
 import { ComparePanel } from '@/features/results/ComparePanel';
 import { ScenarioPanel } from '@/features/scenario/ScenarioPanel';
 import { AppBar } from '@/shared/ui/AppBar';
+import { SectionGroup } from '@/shared/ui/SectionGroup';
+import { SectionNav, type NavGroup } from '@/shared/ui/SectionNav';
 import { ShortcutModal } from '@/shared/ui/ShortcutModal';
 import { Stack } from '@/shared/ui/Stack';
 
@@ -17,13 +20,24 @@ const Page = styled.div(({ theme }) => ({
   background: theme.color.bg,
 }));
 
-const Container = styled.div(({ theme }) => ({
-  maxWidth: 1280,
+const Layout = styled.div(({ theme }) => ({
+  maxWidth: 1440,
   margin: '0 auto',
-  padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+  display: 'grid',
+  gridTemplateColumns: '224px minmax(0, 1fr)',
+  alignItems: 'start',
 
-  '@media (max-width: 768px)': {
-    padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
+  '@media (max-width: 1024px)': {
+    gridTemplateColumns: 'minmax(0, 1fr)',
+  },
+
+  '& > *': { minWidth: 0 },
+  '& > main': {
+    padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+
+    '@media (max-width: 1024px)': {
+      padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
+    },
   },
 }));
 
@@ -40,8 +54,8 @@ const PageSubtitle = styled.p(({ theme }) => ({
   marginTop: theme.spacing(2),
   fontSize: theme.font.size.md,
   color: theme.color.textMuted,
-  maxWidth: 720,
-  lineHeight: theme.font.lineHeight.normal,
+  maxWidth: 760,
+  lineHeight: theme.font.lineHeight.relaxed,
 }));
 
 const TopGrid = styled.div(({ theme }) => ({
@@ -60,7 +74,7 @@ const fadeUp = keyframes`
   to   { opacity: 1; transform: translateY(0); }
 `;
 
-const Section = styled.div<{ delay?: number }>(({ theme, delay = 0 }) => ({
+const Anim = styled.div<{ delay?: number }>(({ theme, delay = 0 }) => ({
   animation: `${fadeUp} ${theme.motion.duration.slow} ${theme.motion.easing.enter} both`,
   animationDelay: `${delay}ms`,
 }));
@@ -78,6 +92,27 @@ const PlaceholderCard = styled.div(({ theme }) => ({
   minHeight: 160,
 }));
 
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'scenario',
+    label: '시나리오 분석',
+    icon: Layers,
+    anchors: [
+      { id: 'scenario', label: '시나리오 + 편집' },
+    ],
+  },
+  {
+    id: 'bpt-workflow',
+    label: 'BPT 직접 워크플로',
+    icon: Database,
+    anchors: [
+      { id: 'bpt-data', label: 'BPT 데이터' },
+      { id: 'bpt-solver', label: '솔버 작업' },
+      { id: 'bpt-compare', label: '결과 비교' },
+    ],
+  },
+];
+
 export default function Dashboard() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [leftJobId, setLeftJobId] = useState<string | null>(null);
@@ -93,55 +128,90 @@ export default function Dashboard() {
     <Page>
       <AppBar />
       <ShortcutModal />
-      <Container>
-        <Stack gap={6}>
-          <Section>
-            <Stack gap={1}>
-              <PageTitle>선석 배정 양자 최적화</PageTitle>
-              <PageSubtitle>
-                BPT 데이터 적재 → 솔버 제출 → 결과 폴링 → 두 작업 결과 비교 + Streamlit 풍부 도메인
-                시각화 (MVP-1).
-              </PageSubtitle>
-            </Stack>
-          </Section>
+      <Layout>
+        <SectionNav groups={NAV_GROUPS} />
 
-          <Section delay={40}>
-            <BptPanel />
-          </Section>
+        <main>
+          <Stack gap={8}>
+            <Anim>
+              <Stack gap={1}>
+                <PageTitle>선석 배정 양자 최적화</PageTitle>
+                <PageSubtitle>
+                  부산항 (신선대 SND / 감만 GAM) 선석 배정 시뮬레이터. 좌측 nav 로 두 워크플로 사이를
+                  오갈 수 있어요. <strong>시나리오 분석</strong>이 메인 흐름입니다.
+                </PageSubtitle>
+              </Stack>
+            </Anim>
 
-          <Section delay={80}>
-            <TopGrid>
-              <SolverPanel onSubmitted={handleSubmitted} />
-              {activeJobId ? (
-                <JobProgressCard jobId={activeJobId} />
-              ) : (
-                <PlaceholderCard>
-                  제출된 작업이 없습니다.
-                  <br />
-                  좌측에서 솔버를 실행하면 진행 상태가 여기에 표시됩니다.
-                </PlaceholderCard>
-              )}
-            </TopGrid>
-          </Section>
+            <Anim delay={40}>
+              <SectionGroup
+                id="scenario"
+                icon={Layers}
+                label="MAIN"
+                title="시나리오 분석 + 편집"
+                description={
+                  <>
+                    실제 항만 운영 데이터에서 추출한 4개 시나리오 (0313 14:30 / 16:10, 0316 08:00 /
+                    10:06) 를 SND/GAM 분할 타임라인으로 시각화하고, 드래그/키보드로 직접 편집한 뒤
+                    솔버에 제출해 결과를 비교합니다. 검증 위반(이격 30m, 시간 겹침, 선석 범위 등)은
+                    실시간으로 표시됩니다.
+                  </>
+                }
+              >
+                <ScenarioPanel />
+              </SectionGroup>
+            </Anim>
 
-          <Section delay={120}>
-            <JobsListPanel
-              leftJobId={leftJobId}
-              rightJobId={rightJobId}
-              onSelectLeft={setLeftJobId}
-              onSelectRight={setRightJobId}
-            />
-          </Section>
+            <Anim delay={80}>
+              <SectionGroup
+                id="bpt-workflow"
+                icon={Database}
+                label="개발자 / 빠른 검증"
+                title="BPT 직접 워크플로"
+                description={
+                  <>
+                    풍부 도메인을 우회해 1D <code>BPTRecord</code> 만으로 솔버를 빠르게 검증하는
+                    개발자/디버깅 워크플로. 시나리오를 거치지 않고 단일 vessel 부터 작은 묶음까지
+                    임의 페이로드를 직접 보낼 수 있습니다.
+                  </>
+                }
+              >
+                <Stack gap={5}>
+                  <div id="bpt-data">
+                    <BptPanel />
+                  </div>
 
-          <Section delay={160}>
-            <ComparePanel leftJobId={leftJobId} rightJobId={rightJobId} />
-          </Section>
+                  <div id="bpt-solver">
+                    <TopGrid>
+                      <SolverPanel onSubmitted={handleSubmitted} />
+                      {activeJobId ? (
+                        <JobProgressCard jobId={activeJobId} />
+                      ) : (
+                        <PlaceholderCard>
+                          제출된 작업이 없습니다.
+                          <br />
+                          좌측에서 솔버를 실행하면 진행 상태가 여기에 표시됩니다.
+                        </PlaceholderCard>
+                      )}
+                    </TopGrid>
+                  </div>
 
-          <Section delay={200}>
-            <ScenarioPanel />
-          </Section>
-        </Stack>
-      </Container>
+                  <JobsListPanel
+                    leftJobId={leftJobId}
+                    rightJobId={rightJobId}
+                    onSelectLeft={setLeftJobId}
+                    onSelectRight={setRightJobId}
+                  />
+
+                  <div id="bpt-compare">
+                    <ComparePanel leftJobId={leftJobId} rightJobId={rightJobId} />
+                  </div>
+                </Stack>
+              </SectionGroup>
+            </Anim>
+          </Stack>
+        </main>
+      </Layout>
     </Page>
   );
 }

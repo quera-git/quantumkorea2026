@@ -30,6 +30,22 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
   };
 }
 
+// jsdom 에 IntersectionObserver 도 없음. SectionNav 의 active section 추적 등에서 사용.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  class IOStub {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    root = null;
+    rootMargin = '';
+    thresholds: ReadonlyArray<number> = [];
+  }
+  globalThis.IntersectionObserver = IOStub as unknown as typeof IntersectionObserver;
+}
+
 // jsdom 에 matchMedia 가 없어 styled component 일부 코드가 깨질 수 있어 polyfill.
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) =>
