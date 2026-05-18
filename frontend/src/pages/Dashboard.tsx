@@ -8,7 +8,7 @@ import type {
 // 폴링 간격(ms) — 솔버는 분 단위 작업이라 5초면 충분.
 const POLL_INTERVAL_MS = 5000;
 
-// 데모용 샘플 BPT (3척, 12시간 freeze 윈도우 내). 빠른 라운드트립 검증용.
+// 데모용 샘플 BPT (3척, 12시간 freeze 윈도우 내). DB BPT 없을 때의 fallback.
 const SAMPLE_BPT: BPTRecord[] = [
   { vessel_id: 'D-1', length: 140, eta_int: 0, etb_int: 0, etd_int: 8,
     berth_position: 100, yangha_van: 30, seonjeok_van: 30 },
@@ -19,6 +19,7 @@ const SAMPLE_BPT: BPTRecord[] = [
 ];
 
 type Phase = 'idle' | 'submitting' | 'running' | 'done' | 'error';
+type BPTSource = 'sample' | 'db';
 
 export default function Dashboard() {
   const [phase, setPhase] = useState<Phase>('idle');
@@ -29,15 +30,43 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
 
+  // BPT 데이터 소스 (샘플 3척 / DB 적재분) + 사용 척수 제한
+  const [source, setSource] = useState<BPTSource>('db');
+  const [dbBpt, setDbBpt] = useState<BPTRecord[]>([]);
+  const [limit, setLimit] = useState<number>(10);
+  const [bptError, setBptError] = useState<string | null>(null);
+
   const startedAtRef = useRef<number | null>(null);
 
-  // 헬스체크 (마운트 시 1회)
+  // 헬스체크 + DB BPT 카운트 (마운트 시 1회)
   useEffect(() => {
     apiClient
       .get('/health')
       .then(() => setHealthError(null))
       .catch((e) => setHealthError(`백엔드 연결 실패: ${e.message}`));
+    apiClient
+      .get<BPTRecord[]>('/bpt/')
+      .then(({ data }) => {
+        setDbBpt(data);
+        setBptError(null);
+      })
+      .catch((e) => setBptError(`BPT 조회 실패: ${e.message}`));
   }, []);
+
+  const refreshCrawler = async () => {
+    setBptError(null);
+    try {
+      await apiClient.post('/crawler/refresh');
+      const { data } = await apiClient.get<BPTRecord[]>('/bpt/');
+      setDbBpt(data);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setBptError(`크롤러 실패: ${msg}`);
+    }
+  };
+
+  const effectiveRecords: BPTRecord[] =
+    source === 'sample' ? SAMPLE_BPT : dbBpt.slice(0, limit);
 
   // running 동안 1초마다 elapsed 갱신 + 5초마다 결과 폴링
   useEffect(() => {
@@ -74,13 +103,19 @@ export default function Dashboard() {
   }, [phase, jobId]);
 
   const handleSubmit = async () => {
+    if (effectiveRecords.length === 0) {
+      setError('BPT 데이터가 비어 있습니다. 크롤러 갱신 후 다시 시도하세요.');
+      setPhase('error');
+      return;
+    }
     setPhase('submitting');
     setError(null);
     setResult(null);
     setElapsed(0);
     try {
       const { data } = await apiClient.post<JobAccepted>('/jobs/', {
-        bpt_records: SAMPLE_BPT,
+        job_id: `${solver}-${Date.now()}`,
+        bpt_records: effectiveRecords,
         solver,
         planning_start_time: 0,
       });
@@ -115,9 +150,63 @@ export default function Dashboard() {
       {(phase === 'idle' || phase === 'submitting') && (
         <section style={card}>
           <h2>새 작업 제출</h2>
-          <p style={{ color: '#666' }}>
-            데모용 샘플 BPT 3척으로 즉시 실행됩니다. 실 데이터 업로드 폼은 다음 단계에서 추가됩니다.
-          </p>
+
+          {/* BPT 소스 */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ marginRight: 8, fontWeight: 600 }}>BPT 데이터:</label>
+            <label style={{ marginRight: 16 }}>
+              <input
+                type="radio"
+                name="source"
+                checked={source === 'db'}
+                onChange={() => setSource('db')}
+                disabled={phase === 'submitting'}
+              />
+              {' '}DB 적재분 ({dbBpt.length}척)
+            </label>
+            <label style={{ marginRight: 16 }}>
+              <input
+                type="radio"
+                name="source"
+                checked={source === 'sample'}
+                onChange={() => setSource('sample')}
+                disabled={phase === 'submitting'}
+              />
+              {' '}샘플 3척
+            </label>
+            <button
+              type="button"
+              onClick={refreshCrawler}
+              disabled={phase === 'submitting'}
+              style={{ ...btnSecondary, marginLeft: 8 }}
+            >
+              크롤러 갱신
+            </button>
+          </div>
+
+          {source === 'db' && dbBpt.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ marginRight: 8, fontWeight: 600 }}>
+                사용 척수: {limit} / {dbBpt.length}
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={dbBpt.length}
+                value={Math.min(limit, dbBpt.length)}
+                onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+                disabled={phase === 'submitting'}
+                style={{ width: 240, verticalAlign: 'middle' }}
+              />
+              <span style={{ marginLeft: 12, color: '#666', fontSize: 13 }}>
+                ※ Gurobi 는 척수가 많아질수록 분 단위로 느려집니다 (Rolling Horizon)
+              </span>
+            </div>
+          )}
+
+          {bptError && <p style={{ color: 'crimson' }}>⚠️ {bptError}</p>}
+
+          {/* 솔버 */}
           <div style={{ marginBottom: 12 }}>
             <label style={{ marginRight: 8, fontWeight: 600 }}>솔버:</label>
             {(['gurobi', 'cqm', 'hybrid'] as const).map((s) => (
@@ -134,13 +223,16 @@ export default function Dashboard() {
               </label>
             ))}
           </div>
+
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={phase === 'submitting'}
+            disabled={phase === 'submitting' || effectiveRecords.length === 0}
             style={btnPrimary}
           >
-            {phase === 'submitting' ? '제출 중...' : '최적화 실행'}
+            {phase === 'submitting'
+              ? '제출 중...'
+              : `최적화 실행 (${effectiveRecords.length}척, ${solver})`}
           </button>
         </section>
       )}
