@@ -1,8 +1,17 @@
 import styled from '@emotion/styled';
-import { Cpu, GitCommitHorizontal, Layers, Move, ShieldCheck, Wand2 } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Cpu,
+  GitCommitHorizontal,
+  Layers,
+  Move,
+  ShieldCheck,
+  Wand2,
+} from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
+import { CompareScenarioTab } from '@/features/compare-scenario/CompareScenarioTab';
 import { EditorActionsBar } from '@/features/editor/EditorActionsBar';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
@@ -138,7 +147,7 @@ const ResultMeta = styled.div(({ theme }) => ({
   },
 }));
 
-type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result';
+type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result' | 'compare';
 
 export function ScenarioPanel() {
   const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
@@ -290,6 +299,16 @@ export function ScenarioPanel() {
             솔버 결과
             {lastResult && <ResultDot aria-label="결과 있음" />}
           </Tab>
+          <Tab
+            type="button"
+            role="tab"
+            aria-selected={view === 'compare'}
+            active={view === 'compare'}
+            onClick={() => setView('compare')}
+          >
+            <ArrowLeftRight size={14} aria-hidden="true" />
+            비교
+          </Tab>
         </TabRow>
 
         {scenario && view === 'timeline' && (
@@ -313,6 +332,10 @@ export function ScenarioPanel() {
         {scenario && view === 'validation' && <ValidationPanel assignments={displayRows} />}
 
         {scenario && view === 'result' && <ResultView />}
+
+        {scenario && view === 'compare' && (
+          <CompareScenarioTab scenarioRows={scenario.rows} />
+        )}
       </Stack>
     </Card>
   );
