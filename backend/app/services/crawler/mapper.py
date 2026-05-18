@@ -4,7 +4,11 @@ BPTC 사이트가 반환하는 한글 컬럼과 VesselFinder 결과를 우리 sc
 영문 필드로 변환한다. ETA/ETB/ETD 는 "YYYY/MM/DD HH:MM" 문자열에서
 reference_time 기준 시간 오프셋(시)으로 변환된다.
 
-length 또는 bp(berth_position) 가 비어 있는 행은 스킵된다 (필수 필드).
+ETB(입항일시) 는 실제 접안 후에만 채워지는 사이트 특성상, 미래 예정
+선박은 비어 있다. 이 경우 ETB=ETA 로 대체해 솔버에게 "ETA 시점 접안
+가정"으로 넘긴다 (솔버가 실제 ETB 를 결정).
+
+length / bp / ETA / ETD 가 비어 있는 행은 스킵된다.
 """
 from __future__ import annotations
 
@@ -61,6 +65,7 @@ def crawled_df_to_bpt_records(
         "skipped_date": 0,
         "skipped_length": 0,
         "skipped_bp": 0,
+        "etb_filled_from_eta": 0,  # ETB 비어 ETA 로 대체된 행 수 (미래 예정 선박)
     }
 
     if df.empty:
@@ -80,10 +85,14 @@ def crawled_df_to_bpt_records(
         length = row.get("Length(m)")
         bp = row.get("bp")
 
-        if eta is None or etb is None or etd is None:
+        # ETA/ETD 는 필수, ETB 는 미래 예정 선박에서 비어있는 게 정상
+        if eta is None or etd is None:
             stats["skipped_date"] += 1
             stats["skipped"] += 1
             continue
+        if etb is None:
+            etb = eta
+            stats["etb_filled_from_eta"] += 1
         if length is None or pd.isna(length) or float(length) <= 0:
             stats["skipped_length"] += 1
             stats["skipped"] += 1

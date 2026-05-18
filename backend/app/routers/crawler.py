@@ -133,6 +133,7 @@ async def refresh_bpt(
                 "length_missing": stats.get("skipped_length", 0),
                 "bp_missing": stats.get("skipped_bp", 0),
             },
+            "etb_filled_from_eta": stats.get("etb_filled_from_eta", 0),
             "replace": replace,
             "reference_time": ref_dt.isoformat() if ref_dt else None,
         }
