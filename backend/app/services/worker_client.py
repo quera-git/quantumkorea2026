@@ -13,8 +13,9 @@ from shared.schema import OptimizeRequest, OptimizeResult
 
 logger = logging.getLogger(__name__)
 
-# 양자 솔버는 수십 초~수 분 소요될 수 있어 read 타임아웃을 길게 설정
-_TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=5.0)
+# 양자/Gurobi 솔버는 Rolling Horizon 으로 수 분~수십 분 소요될 수 있어 read 타임아웃을 길게 설정.
+# Gurobi 가 iteration 당 TimeLimit=300s 를 쓸 수 있고 iteration 이 여러 번 돈다.
+_TIMEOUT = httpx.Timeout(connect=5.0, read=1800.0, write=30.0, pool=5.0)
 
 
 async def submit_to_worker(request: OptimizeRequest) -> OptimizeResult:
