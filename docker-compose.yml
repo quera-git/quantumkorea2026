@@ -24,7 +24,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      WORKER_URL: http://worker:9000
+      # 기본은 같은 네트워크의 worker 컨테이너. 호스트 워커 dev 모드 시
+      # .env 에 WORKER_URL=http://host.docker.internal:9000 으로 오버라이드.
+      WORKER_URL: ${WORKER_URL:-http://worker:9000}
       DATABASE_URL: sqlite+aiosqlite:////data/qpo.db
     volumes:
       - ./backend/data:/data
