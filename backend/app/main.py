@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 from app.db import init_db
-from app.routers import bpt, jobs, results
+from app.routers import bpt, crawler, jobs, results
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.add_middleware(
 app.include_router(bpt.router, prefix="/bpt", tags=["bpt"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(results.router, prefix="/results", tags=["results"])
+app.include_router(crawler.router, prefix="/crawler", tags=["crawler"])
 
 
 @app.get("/health")
