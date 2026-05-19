@@ -1,314 +1,217 @@
-import { useEffect, useRef, useState } from 'react';
-import { apiClient } from '../api/client';
-import GanttChart from '../components/GanttChart';
-import type {
-  BPTRecord, JobAccepted, OptimizeResult, SolverName,
-} from '../types/schema';
+import { keyframes } from '@emotion/react';
+import styled from '@emotion/styled';
+import { Database, Layers } from 'lucide-react';
+import { useState } from 'react';
 
-// 폴링 간격(ms) — 솔버는 분 단위 작업이라 5초면 충분.
-const POLL_INTERVAL_MS = 5000;
+import { BptPanel } from '@/features/bpt/BptPanel';
+import { JobProgressCard } from '@/features/jobs/JobProgressCard';
+import { JobsListPanel } from '@/features/jobs/JobsListPanel';
+import { SolverPanel } from '@/features/jobs/SolverPanel';
+import { ComparePanel } from '@/features/results/ComparePanel';
+import { ScenarioPanel } from '@/features/scenario/ScenarioPanel';
+import { AppBar } from '@/shared/ui/AppBar';
+import { SectionGroup } from '@/shared/ui/SectionGroup';
+import { SectionNav, type NavGroup } from '@/shared/ui/SectionNav';
+import { ShortcutModal } from '@/shared/ui/ShortcutModal';
+import { Stack } from '@/shared/ui/Stack';
 
-// 데모용 샘플 BPT (3척, 12시간 freeze 윈도우 내). DB BPT 없을 때의 fallback.
-const SAMPLE_BPT: BPTRecord[] = [
-  { vessel_id: 'D-1', length: 140, eta_int: 0, etb_int: 0, etd_int: 8,
-    berth_position: 100, yangha_van: 30, seonjeok_van: 30 },
-  { vessel_id: 'D-2', length: 160, eta_int: 1, etb_int: 1, etd_int: 10,
-    berth_position: 300, yangha_van: 40, seonjeok_van: 40 },
-  { vessel_id: 'D-3', length: 180, eta_int: 3, etb_int: 3, etd_int: 11,
-    berth_position: 600, yangha_van: 50, seonjeok_van: 50 },
+const Page = styled.div(({ theme }) => ({
+  minHeight: '100vh',
+  background: theme.color.bg,
+}));
+
+const Layout = styled.div(({ theme }) => ({
+  maxWidth: 1440,
+  margin: '0 auto',
+  display: 'grid',
+  gridTemplateColumns: '224px minmax(0, 1fr)',
+  alignItems: 'start',
+
+  '@media (max-width: 1024px)': {
+    gridTemplateColumns: 'minmax(0, 1fr)',
+  },
+
+  '& > *': { minWidth: 0 },
+  '& > main': {
+    padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+
+    '@media (max-width: 1024px)': {
+      padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
+    },
+  },
+}));
+
+const PageTitle = styled.h1(({ theme }) => ({
+  margin: 0,
+  fontSize: theme.font.size.title,
+  fontWeight: theme.font.weight.bold,
+  color: theme.color.text,
+  letterSpacing: theme.font.letter.tight,
+}));
+
+const PageSubtitle = styled.p(({ theme }) => ({
+  margin: 0,
+  marginTop: theme.spacing(2),
+  fontSize: theme.font.size.md,
+  color: theme.color.textMuted,
+  maxWidth: 760,
+  lineHeight: theme.font.lineHeight.relaxed,
+}));
+
+const TopGrid = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: '1fr 380px',
+  gap: theme.spacing(4),
+  alignItems: 'start',
+
+  '@media (max-width: 1024px)': {
+    gridTemplateColumns: '1fr',
+  },
+}));
+
+const fadeUp = keyframes`
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+`;
+
+const Anim = styled.div<{ delay?: number }>(({ theme, delay = 0 }) => ({
+  animation: `${fadeUp} ${theme.motion.duration.slow} ${theme.motion.easing.enter} both`,
+  animationDelay: `${delay}ms`,
+}));
+
+const PlaceholderCard = styled.div(({ theme }) => ({
+  border: `1px dashed ${theme.color.borderSubtle}`,
+  borderRadius: theme.radius.xl,
+  padding: theme.spacing(6),
+  fontSize: theme.font.size.sm,
+  color: theme.color.textMuted,
+  background: theme.color.surfaceAlt,
+  display: 'grid',
+  placeItems: 'center',
+  textAlign: 'center',
+  minHeight: 160,
+}));
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'scenario',
+    label: '시나리오 분석',
+    icon: Layers,
+    anchors: [
+      { id: 'scenario', label: '시나리오 + 편집' },
+    ],
+  },
+  {
+    id: 'bpt-workflow',
+    label: 'BPT 직접 워크플로',
+    icon: Database,
+    anchors: [
+      { id: 'bpt-data', label: 'BPT 데이터' },
+      { id: 'bpt-solver', label: '솔버 작업' },
+      { id: 'bpt-compare', label: '결과 비교' },
+    ],
+  },
 ];
 
-type Phase = 'idle' | 'submitting' | 'running' | 'done' | 'error';
-type BPTSource = 'sample' | 'db';
-
 export default function Dashboard() {
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [solver, setSolver] = useState<SolverName>('gurobi');
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [result, setResult] = useState<OptimizeResult | null>(null);
-  const [elapsed, setElapsed] = useState<number>(0);
-  const [error, setError] = useState<string | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [leftJobId, setLeftJobId] = useState<string | null>(null);
+  const [rightJobId, setRightJobId] = useState<string | null>(null);
 
-  // BPT 데이터 소스 (샘플 3척 / DB 적재분) + 사용 척수 제한
-  const [source, setSource] = useState<BPTSource>('db');
-  const [dbBpt, setDbBpt] = useState<BPTRecord[]>([]);
-  const [limit, setLimit] = useState<number>(10);
-  const [bptError, setBptError] = useState<string | null>(null);
-
-  const startedAtRef = useRef<number | null>(null);
-
-  // 헬스체크 + DB BPT 카운트 (마운트 시 1회)
-  useEffect(() => {
-    apiClient
-      .get('/health')
-      .then(() => setHealthError(null))
-      .catch((e) => setHealthError(`백엔드 연결 실패: ${e.message}`));
-    apiClient
-      .get<BPTRecord[]>('/bpt/')
-      .then(({ data }) => {
-        setDbBpt(data);
-        setBptError(null);
-      })
-      .catch((e) => setBptError(`BPT 조회 실패: ${e.message}`));
-  }, []);
-
-  const refreshCrawler = async () => {
-    setBptError(null);
-    try {
-      await apiClient.post('/crawler/refresh');
-      const { data } = await apiClient.get<BPTRecord[]>('/bpt/');
-      setDbBpt(data);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setBptError(`크롤러 실패: ${msg}`);
-    }
-  };
-
-  const effectiveRecords: BPTRecord[] =
-    source === 'sample' ? SAMPLE_BPT : dbBpt.slice(0, limit);
-
-  // running 동안 1초마다 elapsed 갱신 + 5초마다 결과 폴링
-  useEffect(() => {
-    if (phase !== 'running' || !jobId) return;
-
-    const tick = setInterval(() => {
-      if (startedAtRef.current !== null) {
-        setElapsed((Date.now() - startedAtRef.current) / 1000);
-      }
-    }, 1000);
-
-    const poll = setInterval(async () => {
-      try {
-        const { data } = await apiClient.get<OptimizeResult>(`/results/${jobId}`);
-        if (data.status === 'succeeded') {
-          setResult(data);
-          setPhase('done');
-        } else if (data.status === 'failed') {
-          setError(data.error_message ?? '작업 실패 (사유 미지정)');
-          setPhase('error');
-        }
-        // running 이면 계속 폴링
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setError(`폴링 실패: ${msg}`);
-        setPhase('error');
-      }
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      clearInterval(tick);
-      clearInterval(poll);
-    };
-  }, [phase, jobId]);
-
-  const handleSubmit = async () => {
-    if (effectiveRecords.length === 0) {
-      setError('BPT 데이터가 비어 있습니다. 크롤러 갱신 후 다시 시도하세요.');
-      setPhase('error');
-      return;
-    }
-    setPhase('submitting');
-    setError(null);
-    setResult(null);
-    setElapsed(0);
-    try {
-      const { data } = await apiClient.post<JobAccepted>('/jobs/', {
-        job_id: `${solver}-${Date.now()}`,
-        bpt_records: effectiveRecords,
-        solver,
-        planning_start_time: 0,
-      });
-      setJobId(data.job_id);
-      startedAtRef.current = Date.now();
-      setPhase('running');
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(`제출 실패: ${msg}`);
-      setPhase('error');
-    }
-  };
-
-  const handleReset = () => {
-    setPhase('idle');
-    setJobId(null);
-    setResult(null);
-    setElapsed(0);
-    setError(null);
-    startedAtRef.current = null;
-  };
+  function handleSubmitted(jobId: string) {
+    setActiveJobId(jobId);
+    if (!leftJobId) setLeftJobId(jobId);
+    else if (!rightJobId) setRightJobId(jobId);
+  }
 
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', maxWidth: 1200 }}>
-      <h1>항만 물류 양자 최적화</h1>
+    <Page>
+      <AppBar />
+      <ShortcutModal />
+      <Layout>
+        <SectionNav groups={NAV_GROUPS} />
 
-      {healthError && (
-        <p style={{ color: 'crimson' }}>⚠️ {healthError}</p>
-      )}
+        <main>
+          <Stack gap={8}>
+            <Anim>
+              <Stack gap={1}>
+                <PageTitle>선석 배정 양자 최적화</PageTitle>
+                <PageSubtitle>
+                  부산항 (신선대 SND / 감만 GAM) 선석 배정 시뮬레이터. 좌측 nav 로 두 워크플로 사이를
+                  오갈 수 있어요. <strong>시나리오 분석</strong>이 메인 흐름입니다.
+                </PageSubtitle>
+              </Stack>
+            </Anim>
 
-      {/* --- 제출 폼 (idle / submitting) --- */}
-      {(phase === 'idle' || phase === 'submitting') && (
-        <section style={card}>
-          <h2>새 작업 제출</h2>
+            <Anim delay={40}>
+              <SectionGroup
+                id="scenario"
+                icon={Layers}
+                label="MAIN"
+                title="시나리오 분석 + 편집"
+                description={
+                  <>
+                    실제 항만 운영 데이터에서 추출한 4개 시나리오 (0313 14:30 / 16:10, 0316 08:00 /
+                    10:06) 를 SND/GAM 분할 타임라인으로 시각화하고, 드래그/키보드로 직접 편집한 뒤
+                    솔버에 제출해 결과를 비교합니다. 검증 위반(이격 30m, 시간 겹침, 선석 범위 등)은
+                    실시간으로 표시됩니다.
+                  </>
+                }
+              >
+                <ScenarioPanel />
+              </SectionGroup>
+            </Anim>
 
-          {/* BPT 소스 */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ marginRight: 8, fontWeight: 600 }}>BPT 데이터:</label>
-            <label style={{ marginRight: 16 }}>
-              <input
-                type="radio"
-                name="source"
-                checked={source === 'db'}
-                onChange={() => setSource('db')}
-                disabled={phase === 'submitting'}
-              />
-              {' '}DB 적재분 ({dbBpt.length}척)
-            </label>
-            <label style={{ marginRight: 16 }}>
-              <input
-                type="radio"
-                name="source"
-                checked={source === 'sample'}
-                onChange={() => setSource('sample')}
-                disabled={phase === 'submitting'}
-              />
-              {' '}샘플 3척
-            </label>
-            <button
-              type="button"
-              onClick={refreshCrawler}
-              disabled={phase === 'submitting'}
-              style={{ ...btnSecondary, marginLeft: 8 }}
-            >
-              크롤러 갱신
-            </button>
-          </div>
+            <Anim delay={80}>
+              <SectionGroup
+                id="bpt-workflow"
+                icon={Database}
+                label="개발자 / 빠른 검증"
+                title="BPT 직접 워크플로"
+                description={
+                  <>
+                    풍부 도메인을 우회해 1D <code>BPTRecord</code> 만으로 솔버를 빠르게 검증하는
+                    개발자/디버깅 워크플로. 시나리오를 거치지 않고 단일 vessel 부터 작은 묶음까지
+                    임의 페이로드를 직접 보낼 수 있습니다.
+                  </>
+                }
+              >
+                <Stack gap={5}>
+                  <div id="bpt-data">
+                    <BptPanel />
+                  </div>
 
-          {source === 'db' && dbBpt.length > 0 && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ marginRight: 8, fontWeight: 600 }}>
-                사용 척수: {limit} / {dbBpt.length}
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={dbBpt.length}
-                value={Math.min(limit, dbBpt.length)}
-                onChange={(e) => setLimit(parseInt(e.target.value, 10))}
-                disabled={phase === 'submitting'}
-                style={{ width: 240, verticalAlign: 'middle' }}
-              />
-              <span style={{ marginLeft: 12, color: '#666', fontSize: 13 }}>
-                ※ Gurobi 는 척수가 많아질수록 분 단위로 느려집니다 (Rolling Horizon)
-              </span>
-            </div>
-          )}
+                  <div id="bpt-solver">
+                    <TopGrid>
+                      <SolverPanel onSubmitted={handleSubmitted} />
+                      {activeJobId ? (
+                        <JobProgressCard jobId={activeJobId} />
+                      ) : (
+                        <PlaceholderCard>
+                          제출된 작업이 없습니다.
+                          <br />
+                          좌측에서 솔버를 실행하면 진행 상태가 여기에 표시됩니다.
+                        </PlaceholderCard>
+                      )}
+                    </TopGrid>
+                  </div>
 
-          {bptError && <p style={{ color: 'crimson' }}>⚠️ {bptError}</p>}
+                  <JobsListPanel
+                    leftJobId={leftJobId}
+                    rightJobId={rightJobId}
+                    onSelectLeft={setLeftJobId}
+                    onSelectRight={setRightJobId}
+                  />
 
-          {/* 솔버 */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ marginRight: 8, fontWeight: 600 }}>솔버:</label>
-            {(['gurobi', 'cqm', 'hybrid'] as const).map((s) => (
-              <label key={s} style={{ marginRight: 16 }}>
-                <input
-                  type="radio"
-                  name="solver"
-                  value={s}
-                  checked={solver === s}
-                  onChange={() => setSolver(s)}
-                  disabled={phase === 'submitting'}
-                />
-                {' '}{s}
-              </label>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={phase === 'submitting' || effectiveRecords.length === 0}
-            style={btnPrimary}
-          >
-            {phase === 'submitting'
-              ? '제출 중...'
-              : `최적화 실행 (${effectiveRecords.length}척, ${solver})`}
-          </button>
-        </section>
-      )}
-
-      {/* --- 실행 중 --- */}
-      {phase === 'running' && (
-        <section style={card}>
-          <h2>⏳ 최적화 실행 중</h2>
-          <p>job_id: <code>{jobId}</code></p>
-          <p style={{ fontSize: 24, fontWeight: 700 }}>
-            경과 시간: {elapsed.toFixed(1)}s
-          </p>
-          <p style={{ color: '#666' }}>
-            {POLL_INTERVAL_MS / 1000}초마다 백엔드에 결과를 확인합니다.
-            솔버에 따라 분 단위가 소요될 수 있습니다.
-          </p>
-        </section>
-      )}
-
-      {/* --- 완료 --- */}
-      {phase === 'done' && result && (
-        <section style={card}>
-          <h2>✅ 최적화 완료</h2>
-          <p>
-            <strong>솔버:</strong> {solver} {' | '}
-            <strong>목적함수:</strong> {result.objective_value?.toFixed(2) ?? '-'} {' | '}
-            <strong>총 소요:</strong> {result.elapsed_seconds?.toFixed(2) ?? '-'}s {' | '}
-            <strong>스케줄:</strong> {result.schedule.length}척
-          </p>
-          <button type="button" onClick={handleReset} style={btnSecondary}>
-            새 작업
-          </button>
-          <div style={{ marginTop: 16 }}>
-            <GanttChart schedule={result.schedule} />
-          </div>
-        </section>
-      )}
-
-      {/* --- 에러 --- */}
-      {phase === 'error' && (
-        <section style={{ ...card, borderColor: 'crimson' }}>
-          <h2 style={{ color: 'crimson' }}>❌ 작업 실패</h2>
-          <p>{error}</p>
-          <button type="button" onClick={handleReset} style={btnSecondary}>
-            다시 시도
-          </button>
-        </section>
-      )}
-    </div>
+                  <div id="bpt-compare">
+                    <ComparePanel leftJobId={leftJobId} rightJobId={rightJobId} />
+                  </div>
+                </Stack>
+              </SectionGroup>
+            </Anim>
+          </Stack>
+        </main>
+      </Layout>
+    </Page>
   );
 }
-
-const card: React.CSSProperties = {
-  border: '1px solid #ddd',
-  borderRadius: 8,
-  padding: 16,
-  marginTop: 16,
-  background: '#fafafa',
-};
-
-const btnPrimary: React.CSSProperties = {
-  padding: '8px 16px',
-  fontSize: 16,
-  background: '#2563eb',
-  color: 'white',
-  border: 'none',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-
-const btnSecondary: React.CSSProperties = {
-  padding: '6px 12px',
-  fontSize: 14,
-  background: '#f3f4f6',
-  color: '#111',
-  border: '1px solid #ddd',
-  borderRadius: 4,
-  cursor: 'pointer',
-};

@@ -30,9 +30,15 @@
 - 패키지 매니저: **uv**
 
 ### Frontend (Node 20)
-- React 18, Vite, TypeScript (strict)
-- axios (HTTP 클라이언트)
-- plotly.js / react-plotly.js (Gantt 차트)
+- React 18, Vite, TypeScript (strict, `noUncheckedIndexedAccess`)
+- 서버 상태/캐시: **@tanstack/react-query v5**
+- HTTP 클라이언트: **axios** (단일 인스턴스 — `src/shared/api/client.ts`)
+- 런타임 검증: **zod** (API 응답 파싱)
+- 스타일: **@emotion/react + @emotion/styled** + `styled-reset` + Pretendard Variable
+- 클라이언트 상태(편집/드래그 등): **zustand** (MVP-1 부터 도입 예정)
+- 차트: **plotly.js-dist-min / react-plotly.js** (간트)
+- 코드 품질: ESLint 9 (flat config) + Prettier 3
+- 테스트: **Vitest 2** + jsdom + @testing-library/react + @testing-library/user-event + **MSW 2** (in-memory backend mock). 테스트 파일은 colocate (`*.test.ts(x)` 옆에 둔다).
 
 ---
 
@@ -61,9 +67,32 @@
 - 추후 `openapi-typescript`로 자동 생성 도입 검토.
 
 ### 4.2 Frontend 호출 규칙
-- ✅ 모든 backend 호출은 **`frontend/src/api/client.ts`의 단일 axios 인스턴스**를 통해서만 수행한다.
+- ✅ 모든 backend 호출은 **`frontend/src/shared/api/client.ts`의 단일 axios 인스턴스**를 통해서만 수행한다.
+- ✅ 도메인별 호출은 `shared/api/<domain>.api.ts` (예: `bpt.api.ts`, `jobs.api.ts`, `results.api.ts`) 에 함수로 분리하고, React Query hook(`features/<domain>/<domain>.queries.ts`)이 그 함수를 `queryFn`/`mutationFn` 으로 호출한다.
+- ✅ 응답은 `shared/types/schema.ts` 의 zod 스키마로 한 번 파싱한다 (백엔드 스키마 변경 조기 감지).
 - ❌ 컴포넌트나 페이지에서 직접 `fetch()` / `axios.get()` 호출 금지.
-- 이유: baseURL, 타임아웃, 인터셉터, 에러 처리 정책의 일관성 확보.
+- ❌ `apiClient.baseURL` 외의 다른 axios 인스턴스 생성 금지.
+- 이유: baseURL, 타임아웃, 인터셉터, 에러 처리 정책의 일관성 확보 + 캐시/리페치/폴링 정책 단일화.
+
+### 4.2.1 Frontend 폴더 구조
+```
+frontend/src/
+  app/             — providers (RQ + Theme + GlobalStyle)
+  shared/
+    api/           — axios 인스턴스 + 도메인별 endpoint 함수 + queryKeys
+    config/        — env 단일 진입점
+    types/         — shared/schema.py 미러 + zod 스키마
+    ui/            — 토큰 기반 프리미티브 (Card, Button, Stack, ...)
+  features/
+    <domain>/      — 도메인별 hook(queries) + 컴포넌트 (예: bpt, jobs, results, health)
+  pages/           — 페이지 단위 컴포지션
+  styles/          — theme, global, emotion 타입 확장
+  test/            — vitest setup, MSW server/handlers, 테스트 helper, plotly mock
+```
+- ✅ 컴포넌트는 features/ 안에서 자기 도메인 hook 만 사용. 다른 도메인 hook 을 import 해야 한다면 그 파일은 page 또는 상위 컴포지션이어야 한다.
+- ❌ `pages/` 가 직접 axios 또는 RQ raw API 를 호출하지 말 것 — 반드시 features hook 을 경유.
+- ✅ 테스트는 대상 파일과 colocate (`schema.test.ts` 가 `schema.ts` 옆에). 통합 테스트는 `pages/<page>.test.tsx`.
+- ✅ 테스트에서 backend 호출은 항상 `src/test/server.ts` 의 MSW 가 가로챈다 — 실제 backend 가 떠 있어도 테스트는 mock 만 본다 (`onUnhandledRequest: 'error'` 로 누락된 mock 즉시 실패).
 
 ### 4.3 Backend → Worker 호출 규칙
 - ✅ backend의 worker 호출은 **`backend/app/services/worker_client.py`**의 함수만을 통해 수행한다.
