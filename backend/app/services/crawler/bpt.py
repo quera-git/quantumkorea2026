@@ -183,8 +183,29 @@ def parse_bp(bp_str: str | None) -> tuple[int | None, int | None, int | None]:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
 
+def _extract_eta_dates(df: pd.DataFrame) -> list[str]:
+    """DataFrame 의 '입항 예정일시' 컬럼에서 unique YYYY-MM-DD 일자를 뽑는다.
+
+    BPTC 의 선석 그래픽 페이지는 v_dt=하루치 만 반환하므로, 조회 결과에 여러
+    날짜의 선박이 섞여 있으면 각 일자에 대해 BP 호출이 필요하다.
+    """
+    if "입항 예정일시" not in df.columns:
+        return []
+    dates: set[str] = set()
+    for s in df["입항 예정일시"]:
+        if not isinstance(s, str) or len(s) < 10:
+            continue
+        # "YYYY/MM/DD HH:MM" → "YYYY-MM-DD"
+        dates.add(s[:10].replace("/", "-"))
+    return sorted(dates)
+
+
 def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFrame:
     """DataFrame 의 '모선항차' 컬럼을 기반으로 bp/f/e 컬럼을 추가한다.
+
+    date 가 None 이면 DataFrame 의 ETA 일자 set 을 뽑아 각 일자별로 BP 페이지를
+    조회한 뒤 dict 를 합친다. 사이트의 BP 그래픽은 v_dt=하루치 만 보여주므로,
+    조회 기간이 여러 날에 걸치거나 오늘이 아닐 때 매칭 누락이 발생한다.
 
     DataFrame 에 '모선항차' 컬럼이 없으면 원본을 그대로 반환.
     """
@@ -192,7 +213,15 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
         logger.warning("DataFrame 에 '모선항차' 컬럼 없음 — bp 추가 스킵")
         return df
 
-    bp_dict = get_all_bp_data(date)
+    if date is not None:
+        bp_dict = get_all_bp_data(date)
+    else:
+        eta_dates = _extract_eta_dates(df) or [None]
+        bp_dict: dict[tuple[str, str], str] = {}
+        for d in eta_dates:
+            bp_dict.update(get_all_bp_data(d))
+        logger.info("BP 다일자 조회: %s → 누적 %d 척", eta_dates, len(bp_dict))
+
     bp_list, f_list, e_list = [], [], []
     failed_ships: list[str] = []
 
