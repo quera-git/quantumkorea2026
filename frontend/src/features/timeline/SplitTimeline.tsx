@@ -1,3 +1,4 @@
+import { useTheme } from '@emotion/react';
 import { useMemo } from 'react';
 import type { Annotations, Layout, PlotData, Shape } from 'plotly.js';
 
@@ -55,6 +56,12 @@ function rgbaWithAlpha(hex: string, alpha: number): string {
  * - 클릭/드래그 없음 (Phase 4 에서 별도 editor 컴포넌트로 추가).
  */
 export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
+  const theme = useTheme();
+  const isDark = theme.mode === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
+  const plotBg = isDark ? 'rgba(255,255,255,0.02)' : '#fafbfd';
+  const tickColor = isDark ? theme.color.textMuted : '#475569';
+
   const { traces, shapes, annotations, computedXRange } = useMemo(
     () => buildFigure(assignments, xRange),
     [assignments, xRange],
@@ -66,7 +73,7 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
     showlegend: false,
     hovermode: 'closest',
     paper_bgcolor: 'transparent',
-    plot_bgcolor: '#fafbfd',
+    plot_bgcolor: plotBg,
     grid: { rows: 2, columns: 1, pattern: 'independent' },
 
     // SND (상단)
@@ -75,7 +82,9 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
       domain: [0, 1],
       anchor: 'y',
       range: computedXRange,
-      gridcolor: '#eef0f6',
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
       showgrid: true,
       showticklabels: false,
     },
@@ -83,7 +92,9 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
       domain: [0.52, 1],
       range: [0, TERMINAL_LAYOUT.SND.yMax],
       title: { text: 'SND (m)', standoff: 8 },
-      gridcolor: '#eef0f6',
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
       zeroline: false,
     },
 
@@ -94,20 +105,24 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
       anchor: 'y2',
       range: computedXRange,
       matches: 'x',
-      gridcolor: '#eef0f6',
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
       showgrid: true,
     },
     yaxis2: {
       domain: [0, 0.48],
       range: [0, TERMINAL_LAYOUT.GAM.yMax],
       title: { text: 'GAM (m)', standoff: 8 },
-      gridcolor: '#eef0f6',
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
       zeroline: false,
     },
 
     shapes,
     annotations,
-    font: { family: 'Pretendard Variable, system-ui, sans-serif' },
+    font: { family: 'Pretendard Variable, system-ui, sans-serif', color: theme.color.text },
   };
 
   return (

@@ -6,6 +6,7 @@
 // - berth 는 새 y mid 위치로 inferBerthFromY 로 재추론.
 // - 같은 터미널 내 이동만 (Streamlit 원본 동작과 동일).
 
+import { useTheme } from '@emotion/react';
 import styled from '@emotion/styled';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
@@ -102,6 +103,17 @@ interface Props {
 }
 
 export function EditorCanvas({ assignments, disabled = false }: Props) {
+  const theme = useTheme();
+  const isDark = theme.mode === 'dark';
+  const gridLight = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(15,23,42,0.07)';
+  const gridDay = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.18)';
+  const bandEven = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.025)';
+  const bandOdd = isDark ? 'rgba(255,255,255,0.015)' : 'rgba(15,23,42,0.015)';
+  const bandStroke = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)';
+  const tickFill = isDark ? 'rgba(255,255,255,0.7)' : 'rgba(15,23,42,0.7)';
+  const labelFill = theme.color.text;
+  const defaultBarStroke = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(15,23,42,0.5)';
+
   const applyMove = useEditorStore((s) => s.applyMove);
   const selectRow = useEditorStore((s) => s.selectRow);
   const selectedRowId = useEditorStore((s) => s.selectedRowId);
@@ -347,7 +359,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                     x2={px}
                     y1={margin.top}
                     y2={margin.top + innerHeight}
-                    stroke={isDay ? 'rgba(15,23,42,0.18)' : 'rgba(15,23,42,0.07)'}
+                    stroke={isDay ? gridDay : gridLight}
                     strokeWidth={isDay ? 1.2 : 0.8}
                   />
                   {i % 2 === 0 && (
@@ -355,7 +367,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                       x={px + 2}
                       y={margin.top - 2}
                       fontSize={10}
-                      fill="rgba(15,23,42,0.7)"
+                      fill={tickFill}
                       style={{ fontFamily: 'monospace' }}
                     >
                       {text}
@@ -377,8 +389,8 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                     y={yA}
                     width={innerWidth}
                     height={yB - yA}
-                    fill={idx % 2 === 0 ? 'rgba(15,23,42,0.025)' : 'rgba(15,23,42,0.015)'}
-                    stroke="rgba(15,23,42,0.06)"
+                    fill={idx % 2 === 0 ? bandEven : bandOdd}
+                    stroke={bandStroke}
                     strokeWidth={0.5}
                   />
                   <text
@@ -387,7 +399,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                     textAnchor="end"
                     dominantBaseline="middle"
                     fontSize={11}
-                    fill="rgba(15,23,42,0.7)"
+                    fill={tickFill}
                     style={{ fontFamily: 'monospace' }}
                   >
                     B{b}
@@ -421,7 +433,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
                   ? 'rgba(220, 38, 38, 0.95)'
                   : isDragging
                     ? 'rgba(37, 99, 235, 0.85)'
-                    : 'rgba(15,23,42,0.5)';
+                    : defaultBarStroke;
               const strokeWidth = isSel || isInvalid ? 2 : 1;
               const label = r.voyage || r.vessel || '';
 
@@ -471,7 +483,7 @@ f=${r.f}m e=${r.e}m`;
                     textAnchor="middle"
                     dominantBaseline="middle"
                     fontSize={11}
-                    fill="rgba(15,23,42,0.95)"
+                    fill={labelFill}
                     pointerEvents="none"
                     style={{ fontWeight: isSel ? 700 : 500 }}
                   >
