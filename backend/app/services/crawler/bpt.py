@@ -103,14 +103,20 @@ def get_berth_status(
     return df
 
 
-def get_all_bp_data(date: str | None = None) -> dict[tuple[str, str], str]:
-    """한 번의 요청으로 모든 BP(Bitt) 데이터를 사전으로 가져온다.
+def get_all_bp_data(date: str | None = None) -> dict[tuple[str, str], dict[str, str]]:
+    """선석배정 그래픽(G) 페이지에서 BP + plan_cd 등 메타 정보를 일괄 추출.
+
+    VslMsg(PS_ID, ship_cd, call_yy, call_no, loc_cnt, dis_cnt, sft_cnt,
+           plan_cd, oper_cd, ship_nm, bitt, member_section)
+    함수 인자 중 우리가 보존하는 것은 bitt(11)와 plan_cd(8). plan_cd 는 사이트
+    그래픽의 박스 색깔과 대응되며 L/D/C/기타 4상태를 가진다 (BPTRecord 의
+    plan_status 로 매핑).
 
     Args:
         date: 조회 날짜(YYYY-MM-DD). None 이면 오늘.
 
     Returns:
-        {(ship_cd, call_no): bitt_str} 사전. 실패 시 빈 사전.
+        {(ship_cd, call_no): {"bitt": str, "plan_cd": str}} 사전. 실패 시 빈 사전.
     """
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -142,11 +148,11 @@ def get_all_bp_data(date: str | None = None) -> dict[tuple[str, str], str]:
     res.encoding = "euc-kr"
     soup = BeautifulSoup(res.text, "html.parser")
 
-    bp_dict: dict[tuple[str, str], str] = {}
+    info: dict[tuple[str, str], dict[str, str]] = {}
     layer1_sections = soup.find_all("section", id="layer1")
     if not layer1_sections:
         logger.warning("BPTC BP 응답에 layer1 없음")
-        return bp_dict
+        return info
 
     pattern = re.compile(
         r"VslMsg\('([^']*)','([^']*)','([^']*)','([^']*)','([^']*)','([^']*)','([^']*)',"
@@ -161,11 +167,12 @@ def get_all_bp_data(date: str | None = None) -> dict[tuple[str, str], str]:
                 continue
             ship_cd = m.group(2)
             call_no = m.group(4)
+            plan_cd = m.group(8)
             bitt = m.group(11)
-            bp_dict[(ship_cd, call_no)] = bitt
+            info[(ship_cd, call_no)] = {"bitt": bitt, "plan_cd": plan_cd}
 
-    logger.info("BPTC BP 데이터: %d 척", len(bp_dict))
-    return bp_dict
+    logger.info("BPTC BP 데이터: %d 척", len(info))
+    return info
 
 
 def parse_bp(bp_str: str | None) -> tuple[int | None, int | None, int | None]:
@@ -214,15 +221,15 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
         return df
 
     if date is not None:
-        bp_dict = get_all_bp_data(date)
+        info = get_all_bp_data(date)
     else:
         eta_dates = _extract_eta_dates(df) or [None]
-        bp_dict: dict[tuple[str, str], str] = {}
+        info: dict[tuple[str, str], dict[str, str]] = {}
         for d in eta_dates:
-            bp_dict.update(get_all_bp_data(d))
-        logger.info("BP 다일자 조회: %s → 누적 %d 척", eta_dates, len(bp_dict))
+            info.update(get_all_bp_data(d))
+        logger.info("BP 다일자 조회: %s → 누적 %d 척", eta_dates, len(info))
 
-    bp_list, f_list, e_list = [], [], []
+    bp_list, f_list, e_list, plan_list = [], [], [], []
     failed_ships: list[str] = []
 
     for _, row in df.iterrows():
@@ -230,11 +237,14 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
         parts = mocen.split("-")
         if len(parts) >= 2:
             ship_cd, call_no = parts[0], parts[1]
-            bp_str = bp_dict.get((ship_cd, call_no))
+            entry = info.get((ship_cd, call_no)) or {}
+            bp_str = entry.get("bitt")
+            plan_cd = entry.get("plan_cd")
             bp, f, e = parse_bp(bp_str)
             bp_list.append(bp)
             f_list.append(f)
             e_list.append(e)
+            plan_list.append(plan_cd)
             if bp is None and f is None and e is None:
                 failed_ships.append(mocen)
         else:
@@ -243,6 +253,7 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
             bp_list.append(None)
             f_list.append(None)
             e_list.append(None)
+            plan_list.append(None)
 
     if failed_ships:
         logger.info("BP 조회 실패 %d척: %s", len(failed_ships), failed_ships[:10])
@@ -251,4 +262,5 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
     df["bp"] = bp_list
     df["f"] = f_list
     df["e"] = e_list
+    df["plan_cd"] = plan_list
     return df

@@ -17,6 +17,19 @@ from pydantic import BaseModel, Field
 JobStatus = Literal["pending", "running", "succeeded", "failed"]
 SolverName = Literal["gurobi", "cqm", "hybrid"]
 
+# BPTC 선석배정 그래픽(G) 페이지 VslMsg(...) 의 8번째 인자 plan_cd 매핑.
+# 사이트 JS 안에 정의된 한국어 라벨:
+#   L → "적하 프래닝까지 완료"
+#   D → "양하 프래닝까지 완료"
+#   C → "크래인배정 완료"
+#   (빈값/기타) → "크래인미 배정"
+PlanStatus = Literal[
+    "loading_planned",      # plan_cd=L
+    "discharge_planned",    # plan_cd=D
+    "crane_assigned",       # plan_cd=C
+    "crane_unassigned",     # 그 외
+]
+
 
 class BPTRecord(BaseModel):
     """Berth Productivity Table 한 행 — 노트북의 BPT_Result.xlsx 한 행과 동치."""
@@ -29,6 +42,15 @@ class BPTRecord(BaseModel):
     berth_position: float = Field(..., description="접안위치(F) — 선석 시작 좌표(m)")
     yangha_van: float = Field(0, description="양하(Van)")
     seonjeok_van: float = Field(0, description="선적(Van)")
+    plan_status: PlanStatus | None = Field(
+        None,
+        description=(
+            "선석배정 그래픽 페이지의 plan_cd 매핑 — "
+            "loading_planned(적하 프래닝 완료) / discharge_planned(양하 프래닝 완료) / "
+            "crane_assigned(크래인배정 완료) / crane_unassigned(크래인미 배정). "
+            "BP 그래픽에 해당 선박이 없으면 None."
+        ),
+    )
 
 
 class ScheduleEntry(BaseModel):
