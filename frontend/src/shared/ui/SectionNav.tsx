@@ -2,7 +2,7 @@
 // 좁은 화면에서는 상단 horizontal scroll 으로 전환.
 
 import styled from '@emotion/styled';
-import type { LucideIcon } from 'lucide-react';
+import { Keyboard, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export interface NavGroup {
@@ -111,6 +111,34 @@ const Dot = styled.span({
   opacity: 0.6,
 });
 
+const Hint = styled.div(({ theme }) => ({
+  marginTop: theme.spacing(5),
+  paddingTop: theme.spacing(3),
+  borderTop: `1px solid ${theme.color.borderSubtle}`,
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(1.5),
+  fontSize: theme.font.size.xs,
+  color: theme.color.textSubtle,
+  lineHeight: theme.font.lineHeight.normal,
+
+  '& kbd': {
+    padding: '1px 6px',
+    fontSize: theme.font.size.xs,
+    fontFamily: theme.font.mono,
+    background: theme.color.surfaceMuted,
+    border: `1px solid ${theme.color.border}`,
+    borderBottomWidth: 2,
+    borderRadius: theme.radius.sm,
+    color: theme.color.text,
+  },
+
+  // 모바일 가로 strip 일 땐 공간 부족 — 숨김.
+  '@media (max-width: 1024px)': {
+    display: 'none',
+  },
+}));
+
 function smoothScrollTo(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -184,6 +212,13 @@ export function SectionNav({ groups }: Props) {
           </GroupRow>
         );
       })}
+
+      <Hint role="note">
+        <Keyboard size={12} aria-hidden="true" />
+        <span>
+          단축키 <kbd>?</kbd>
+        </span>
+      </Hint>
     </Wrap>
   );
 }

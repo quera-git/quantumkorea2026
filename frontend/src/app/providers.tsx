@@ -1,11 +1,11 @@
-import { ThemeProvider } from '@emotion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { useState, type ReactNode } from 'react';
 
 import { ToastProvider } from '@/shared/ui/Toast';
 import { GlobalStyle } from '@/styles/global';
-import { theme } from '@/styles/theme';
+
+import { ColorModeProvider } from './colorMode';
 
 function makeQueryClient() {
   return new QueryClient({
@@ -18,9 +18,7 @@ function makeQueryClient() {
         },
         refetchOnWindowFocus: false,
       },
-      mutations: {
-        retry: false,
-      },
+      mutations: { retry: false },
     },
   });
 }
@@ -34,11 +32,11 @@ export function AppProviders({ children }: Props) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
+      <ColorModeProvider>
         <GlobalStyle />
         <ToastProvider>{children}</ToastProvider>
         <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
-      </ThemeProvider>
+      </ColorModeProvider>
     </QueryClientProvider>
   );
 }

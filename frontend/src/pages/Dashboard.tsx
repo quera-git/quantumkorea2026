@@ -126,12 +126,15 @@ export default function Dashboard() {
 
   return (
     <Page>
+      <a className="skip-to-content" href="#main-content">
+        본문으로 건너뛰기
+      </a>
       <AppBar />
       <ShortcutModal />
       <Layout>
         <SectionNav groups={NAV_GROUPS} />
 
-        <main>
+        <main id="main-content" tabIndex={-1}>
           <Stack gap={8}>
             <Anim>
               <Stack gap={1}>

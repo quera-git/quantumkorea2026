@@ -1,6 +1,8 @@
+import { useTheme } from '@emotion/react';
 import type { Layout, PlotData } from 'plotly.js';
 
 import { Plot } from '@/shared/ui/Plot';
+import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
 import type { ScheduleEntry } from '@/shared/types/schema';
 
 interface Props {
@@ -13,6 +15,8 @@ interface Props {
   xRange?: [number, number];
   /** 차트 제목. */
   title?: string;
+  /** y라벨 step 기준 터미널. 미지정 시 SND(=300m) step. */
+  terminal?: Terminal;
 }
 
 /**
@@ -21,14 +25,20 @@ interface Props {
  * - Y축: 접안 위치(m)
  * - 각 막대는 [etb, etd] 구간을 길이 비례 두께로 표시.
  */
-export function GanttChart({ schedule, height = 480, yRange, xRange, title }: Props) {
+export function GanttChart({ schedule, height = 480, yRange, xRange, title, terminal }: Props) {
+  const theme = useTheme();
+  const isDark = theme.mode === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
+  const plotBg = isDark ? 'rgba(255,255,255,0.02)' : '#fafbfd';
+  const tickColor = isDark ? theme.color.textMuted : '#475569';
+
   if (schedule.length === 0) {
     return (
       <div
         style={{
           padding: 24,
           textAlign: 'center',
-          color: '#8a93a8',
+          color: theme.color.textSubtle,
           fontSize: 13,
         }}
       >
@@ -49,19 +59,30 @@ export function GanttChart({ schedule, height = 480, yRange, xRange, title }: Pr
   }));
 
   const layout: Partial<Layout> = {
-    title: title ? { text: title, font: { size: 14 } } : undefined,
-    xaxis: { title: { text: '시간 (h)' }, range: xRange, gridcolor: '#eef0f6' },
+    title: title ? { text: title, font: { size: 14, color: theme.color.text } } : undefined,
+    xaxis: {
+      title: { text: '시간 (h)' },
+      range: xRange,
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
+    },
     yaxis: {
       title: { text: '접안 위치 (m)' },
       range: yRange ?? [0, 1500],
-      gridcolor: '#eef0f6',
+      // 라벨 = 선석 경계 (SND 300m / GAM 350m). terminal 미지정 시 SND.
+      dtick: terminal ? TERMINAL_LAYOUT[terminal].step : TERMINAL_LAYOUT.SND.step,
+      gridcolor: gridColor,
+      tickcolor: tickColor,
+      color: tickColor,
     },
     height,
     showlegend: true,
+    legend: { font: { color: theme.color.text } },
     margin: { l: 60, r: 20, t: title ? 40 : 20, b: 40 },
     paper_bgcolor: 'transparent',
-    plot_bgcolor: '#fafbfd',
-    font: { family: 'Pretendard Variable, system-ui, sans-serif' },
+    plot_bgcolor: plotBg,
+    font: { family: 'Pretendard Variable, system-ui, sans-serif', color: theme.color.text },
   };
 
   return (
