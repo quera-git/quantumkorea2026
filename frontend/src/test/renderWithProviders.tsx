@@ -1,10 +1,9 @@
-import { ThemeProvider } from '@emotion/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, type RenderOptions, type RenderResult } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 
+import { ColorModeProvider } from '@/app/colorMode';
 import { ToastProvider } from '@/shared/ui/Toast';
-import { theme } from '@/styles/theme';
 
 /**
  * 테스트용 QueryClient. retry 비활성화로 mock failure 가 즉시 노출된다.
@@ -27,9 +26,9 @@ export function TestProviders({ children, queryClient }: WrapperProps) {
   const qc = queryClient ?? makeTestQueryClient();
   return (
     <QueryClientProvider client={qc}>
-      <ThemeProvider theme={theme}>
+      <ColorModeProvider>
         <ToastProvider>{children}</ToastProvider>
-      </ThemeProvider>
+      </ColorModeProvider>
     </QueryClientProvider>
   );
 }
