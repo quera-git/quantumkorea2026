@@ -12,6 +12,8 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
 import { CompareScenarioTab } from '@/features/compare-scenario/CompareScenarioTab';
+import { LiveQueryPanel } from '@/features/crawler/LiveQueryPanel';
+import { useLiveScenarioStore } from '@/features/crawler/liveScenarioStore';
 import { EditorActionsBar } from '@/features/editor/EditorActionsBar';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
@@ -154,15 +156,28 @@ export function ScenarioPanel() {
   const [view, setView] = useState<View>('timeline');
   const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
+  const liveScenario = useLiveScenarioStore((s) => s.current);
+
+  // 시나리오 = 정적 4개 + 라이브 1개(있을 때).
+  // 라이브가 있고 activeId 가 그것을 가리키면 메모리 시나리오 사용, 아니면 정적 loader.
   const scenario = useMemo(() => {
     if (!activeId) return null;
+    if (liveScenario && activeId === liveScenario.id) {
+      return {
+        scenarioId: liveScenario.id,
+        label: liveScenario.label,
+        sourceFile: 'crawler/preview (live)',
+        rowCount: liveScenario.rows.length,
+        rows: liveScenario.rows,
+      };
+    }
     try {
       return loadScenario(activeId);
     } catch (e) {
       console.error('scenario load failed', e);
       return null;
     }
-  }, [activeId]);
+  }, [activeId, liveScenario]);
 
   const stats = useMemo(() => {
     if (!scenario) return null;
@@ -214,12 +229,24 @@ export function ScenarioPanel() {
       />
 
       <Stack gap={4}>
+        <LiveQueryPanel />
+
         <PillRow>
           {SCENARIO_LIST.map((s) => (
             <Pill key={s.id} active={s.id === activeId} onClick={() => setActiveId(s.id)}>
               {s.label}
             </Pill>
           ))}
+          {liveScenario && (
+            <Pill
+              active={activeId === liveScenario.id}
+              onClick={() => setActiveId(liveScenario.id)}
+              data-live="true"
+              style={{ borderStyle: 'dashed' }}
+            >
+              🔴 {liveScenario.label}
+            </Pill>
+          )}
         </PillRow>
 
         {stats && (
