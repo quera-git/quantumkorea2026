@@ -26,6 +26,7 @@ def _row_to_schema(row: BPTRecordRow) -> BPTRecord:
         berth_position=row.berth_position,
         yangha_van=row.yangha_van,
         seonjeok_van=row.seonjeok_van,
+        plan_status=row.plan_status,  # type: ignore[arg-type]
     )
 
 
@@ -46,6 +47,7 @@ async def upload_bpt(
                 berth_position=r.berth_position,
                 yangha_van=r.yangha_van,
                 seonjeok_van=r.seonjeok_van,
+                plan_status=r.plan_status,
             )
             for r in records
         ]

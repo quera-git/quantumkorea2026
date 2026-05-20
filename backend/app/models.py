@@ -45,4 +45,7 @@ class BPTRecordRow(Base):
     berth_position: Mapped[float] = mapped_column(Float)
     yangha_van: Mapped[float] = mapped_column(Float, default=0.0)
     seonjeok_van: Mapped[float] = mapped_column(Float, default=0.0)
+    # BPTC 선석배정 그래픽의 plan_cd 매핑 — shared.schema.PlanStatus enum 값.
+    # 그래픽에 게시 안 된 선박은 None.
+    plan_status: Mapped[str | None] = mapped_column(String, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

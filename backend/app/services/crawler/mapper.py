@@ -17,9 +17,29 @@ from datetime import datetime
 
 import pandas as pd
 
-from shared.schema import BPTRecord
+from shared.schema import BPTRecord, PlanStatus
 
 logger = logging.getLogger(__name__)
+
+# BPTC 선석배정 그래픽 페이지 VslMsg(...) 의 plan_cd → BPTRecord.plan_status 매핑.
+# 사이트 JS 안의 한국어 라벨과 1:1 대응.
+_PLAN_CD_TO_STATUS: dict[str, PlanStatus] = {
+    "L": "loading_planned",      # 적하 프래닝까지 완료
+    "D": "discharge_planned",    # 양하 프래닝까지 완료
+    "C": "crane_assigned",       # 크래인배정 완료
+}
+
+
+def _to_plan_status(plan_cd: str | None) -> PlanStatus | None:
+    """plan_cd 문자열 → PlanStatus enum 값.
+
+    None 이면 BP 그래픽에 해당 선박이 없는 것 (선석배정 미게시) → None 반환.
+    빈 문자열이나 알 수 없는 코드는 사이트 JS 의 else 분기와 동일하게
+    crane_unassigned 로 본다.
+    """
+    if plan_cd is None:
+        return None
+    return _PLAN_CD_TO_STATUS.get(plan_cd, "crane_unassigned")
 
 _DATE_FORMAT = "%Y/%m/%d %H:%M"
 _REQUIRED_COLUMNS = {
@@ -111,6 +131,7 @@ def crawled_df_to_bpt_records(
             "bp": float(bp),
             "yangha": pd.to_numeric(row.get("양하", 0), errors="coerce"),
             "seonjeok": pd.to_numeric(row.get("선적", 0), errors="coerce"),
+            "plan_status": _to_plan_status(row.get("plan_cd")),
         })
 
     if not parsed_rows:
@@ -131,6 +152,7 @@ def crawled_df_to_bpt_records(
             berth_position=r["bp"],
             yangha_van=float(r["yangha"]) if not pd.isna(r["yangha"]) else 0.0,
             seonjeok_van=float(r["seonjeok"]) if not pd.isna(r["seonjeok"]) else 0.0,
+            plan_status=r["plan_status"],
         ))
 
     stats["ok"] = len(records)

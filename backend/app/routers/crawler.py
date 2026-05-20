@@ -151,6 +151,7 @@ async def refresh_bpt(
                 berth_position=r.berth_position,
                 yangha_van=r.yangha_van,
                 seonjeok_van=r.seonjeok_van,
+                plan_status=r.plan_status,
             )
             for r in records
         ]
