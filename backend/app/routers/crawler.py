@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete
@@ -24,23 +24,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# BPTC form 의 v_time 라디오 값
+TimePreset = Literal["3days", "week", "month", "term"]
+
+
+def _validate_term_dates(
+    time: TimePreset, start_date: date | None, end_date: date | None
+) -> None:
+    """time='term' 일 때 start/end 가 필수임을 검사. 사이트 호출 전 단계."""
+    if time == "term":
+        if start_date is None or end_date is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="time='term' 시 start_date 와 end_date 가 필요합니다 (YYYY-MM-DD).",
+            )
+        if start_date > end_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"start_date({start_date}) 가 end_date({end_date}) 보다 늦습니다.",
+            )
+
+
 @router.get("/preview")
 async def preview_crawl(
-    time: str = "3days",
+    time: TimePreset = "3days",
     route: str = "ALL",
     berth: str = "A",
+    start_date: date | None = None,
+    end_date: date | None = None,
     skip_vsfinder: bool = True,
     limit: int = 20,
 ) -> dict[str, Any]:
     """크롤링 결과를 DB 저장 없이 JSON 으로 반환 (디버그/미리보기용).
 
     Args:
-        time: 조회 기간 (3days 등)
+        time: 조회기간 — "3days"(4일) / "week" / "month" / "term"(직접입력).
         route: 항로구분 (ALL)
-        berth: 터미널 — 신선대(A) / 감만(B)
+        berth: 선석구분 — A(전체) / S(신선대) / G(감만)
+        start_date / end_date: time="term" 일 때 직접입력 시작/종료일 (YYYY-MM-DD).
         skip_vsfinder: True 면 VesselFinder 호출 생략. 빠른 응답용.
         limit: 응답에 포함할 최대 행 수.
     """
+    _validate_term_dates(time, start_date, end_date)
     try:
         df = await asyncio.to_thread(
             collect_berth_info,
@@ -48,6 +73,8 @@ async def preview_crawl(
             route=route,
             berth=berth,
             skip_vsfinder=skip_vsfinder,
+            start_date=start_date,
+            end_date=end_date,
         )
         return {
             "count": int(len(df)),
@@ -56,8 +83,12 @@ async def preview_crawl(
             "params": {
                 "time": time, "route": route, "berth": berth,
                 "skip_vsfinder": skip_vsfinder,
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
             },
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.exception("크롤링 preview 실패")
         raise HTTPException(
@@ -68,9 +99,11 @@ async def preview_crawl(
 
 @router.post("/refresh")
 async def refresh_bpt(
-    time: str = "3days",
+    time: TimePreset = "3days",
     route: str = "ALL",
     berth: str = "A",
+    start_date: date | None = None,
+    end_date: date | None = None,
     reference_time: str | None = None,
     replace: bool = True,
     session: AsyncSession = Depends(get_session),
@@ -78,14 +111,18 @@ async def refresh_bpt(
     """크롤링 → BPTRecord 변환 → BPTRecordRow 테이블 저장.
 
     Args:
-        time/route/berth: BPTC 사이트 조회 파라미터
+        time: 조회기간 — "3days"(4일) / "week" / "month" / "term"(직접입력).
+        route/berth: BPTC 사이트 조회 파라미터.
+        start_date / end_date: time="term" 일 때 직접입력 시작/종료일 (YYYY-MM-DD).
         reference_time: ETA_int=0 으로 잡을 기준 시각(ISO8601). 생략 시 가장 빠른 ETA 자동.
         replace: True 면 기존 BPT 데이터 전체 삭제 후 저장. False 면 append.
     """
+    _validate_term_dates(time, start_date, end_date)
     try:
         df = await asyncio.to_thread(
             collect_berth_info,
             time=time, route=route, berth=berth, skip_vsfinder=False,
+            start_date=start_date, end_date=end_date,
         )
 
         ref_dt: datetime | None = None

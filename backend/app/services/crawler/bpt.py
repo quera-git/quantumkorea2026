@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 import pandas as pd
 import requests
@@ -19,26 +19,56 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15  # seconds
 
+# BPTC 사이트 form 의 v_time 라디오 값 (사이트 HTML 발췌 기준)
+TIME_PRESETS = ("3days", "week", "month", "term")
 
-def get_berth_status(time: str = "3days", route: str = "ALL", berth: str = "A") -> pd.DataFrame:
+
+def get_berth_status(
+    time: str = "3days",
+    route: str = "ALL",
+    berth: str = "A",
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> pd.DataFrame:
     """신선대감만터미널 선석배정 현황 조회.
 
     Args:
-        time: 조회기간 (기본 "3days")
+        time: 조회기간 — "3days"(4일) / "week" / "month" / "term"(직접입력).
         route: 항로구분 (기본 "ALL")
-        berth: 터미널 — 신선대(A) / 감만(B). 기본 "A"
+        berth: 선석구분 — A(전체) / S(신선대) / G(감만). 기본 "A".
+        start_date: time="term" 일 때 시작일.
+        end_date: time="term" 일 때 종료일.
 
     Returns:
         DataFrame. 사이트 응답 실패 또는 테이블 없음 시 빈 DataFrame.
+
+    Raises:
+        ValueError: time="term" 인데 start_date/end_date 누락하거나, 시작>종료.
     """
     url = "https://info.bptc.co.kr/Berth_status_text_servlet_sw_kr"
-    payload = {
+    payload: dict[str, str] = {
         "v_time": time,
         "ROCD": route,
         "v_oper_cd": "",
         "ORDER": "item1",
         "v_gu": berth,
     }
+
+    if time == "term":
+        if start_date is None or end_date is None:
+            raise ValueError("time='term' 시 start_date 와 end_date 가 모두 필요합니다.")
+        if start_date > end_date:
+            raise ValueError(
+                f"start_date({start_date}) 가 end_date({end_date}) 보다 늦습니다."
+            )
+        payload.update({
+            "YEAR1": f"{start_date.year:04d}",
+            "MONTH1": f"{start_date.month:02d}",
+            "DAY1": f"{start_date.day:02d}",
+            "YEAR2": f"{end_date.year:04d}",
+            "MONTH2": f"{end_date.month:02d}",
+            "DAY2": f"{end_date.day:02d}",
+        })
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Referer": (
@@ -153,8 +183,29 @@ def parse_bp(bp_str: str | None) -> tuple[int | None, int | None, int | None]:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
 
+def _extract_eta_dates(df: pd.DataFrame) -> list[str]:
+    """DataFrame 의 '입항 예정일시' 컬럼에서 unique YYYY-MM-DD 일자를 뽑는다.
+
+    BPTC 의 선석 그래픽 페이지는 v_dt=하루치 만 반환하므로, 조회 결과에 여러
+    날짜의 선박이 섞여 있으면 각 일자에 대해 BP 호출이 필요하다.
+    """
+    if "입항 예정일시" not in df.columns:
+        return []
+    dates: set[str] = set()
+    for s in df["입항 예정일시"]:
+        if not isinstance(s, str) or len(s) < 10:
+            continue
+        # "YYYY/MM/DD HH:MM" → "YYYY-MM-DD"
+        dates.add(s[:10].replace("/", "-"))
+    return sorted(dates)
+
+
 def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFrame:
     """DataFrame 의 '모선항차' 컬럼을 기반으로 bp/f/e 컬럼을 추가한다.
+
+    date 가 None 이면 DataFrame 의 ETA 일자 set 을 뽑아 각 일자별로 BP 페이지를
+    조회한 뒤 dict 를 합친다. 사이트의 BP 그래픽은 v_dt=하루치 만 보여주므로,
+    조회 기간이 여러 날에 걸치거나 오늘이 아닐 때 매칭 누락이 발생한다.
 
     DataFrame 에 '모선항차' 컬럼이 없으면 원본을 그대로 반환.
     """
@@ -162,7 +213,15 @@ def add_bp_to_dataframe(df: pd.DataFrame, date: str | None = None) -> pd.DataFra
         logger.warning("DataFrame 에 '모선항차' 컬럼 없음 — bp 추가 스킵")
         return df
 
-    bp_dict = get_all_bp_data(date)
+    if date is not None:
+        bp_dict = get_all_bp_data(date)
+    else:
+        eta_dates = _extract_eta_dates(df) or [None]
+        bp_dict: dict[tuple[str, str], str] = {}
+        for d in eta_dates:
+            bp_dict.update(get_all_bp_data(d))
+        logger.info("BP 다일자 조회: %s → 누적 %d 척", eta_dates, len(bp_dict))
+
     bp_list, f_list, e_list = [], [], []
     failed_ships: list[str] = []
 
