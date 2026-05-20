@@ -12,6 +12,67 @@ import { useCrawlerPreviewAndStore, useCrawlerRefresh } from './crawler.queries'
 import { useLiveScenarioStore } from './liveScenarioStore';
 import { terminalToBackendBerth } from './mapping';
 
+const Wrap = styled.div(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(2),
+}));
+
+const TermRow = styled.div(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: theme.spacing(2),
+  padding: `${theme.spacing(2)} ${theme.spacing(3)}`,
+  background: theme.color.warningSoft,
+  border: `1px solid ${theme.color.warning}33`,
+  borderRadius: theme.radius.md,
+  flexWrap: 'wrap',
+
+  '& .label': {
+    fontSize: theme.font.size.xs,
+    fontWeight: theme.font.weight.semibold,
+    color: theme.color.warning,
+    textTransform: 'uppercase',
+    letterSpacing: theme.font.letter.wide,
+  },
+  '& .sep': {
+    color: theme.color.textSubtle,
+    fontFamily: theme.font.mono,
+  },
+  '& .warn': {
+    fontSize: theme.font.size.xs,
+    color: theme.color.danger,
+    fontWeight: theme.font.weight.medium,
+  },
+  '& .note': {
+    fontSize: theme.font.size.xs,
+    color: theme.color.textMuted,
+    marginLeft: 'auto',
+    fontFamily: theme.font.mono,
+  },
+}));
+
+const DateInput = styled.input(({ theme }) => ({
+  padding: '4px 8px',
+  fontSize: theme.font.size.sm,
+  fontFamily: theme.font.mono,
+  border: `1px solid ${theme.color.border}`,
+  borderRadius: theme.radius.sm,
+  background: theme.color.surface,
+  color: theme.color.text,
+  colorScheme: theme.mode,
+
+  '&:focus-visible': {
+    outline: 'none',
+    borderColor: theme.color.primary,
+    boxShadow: theme.shadow.focus,
+  },
+  '&:disabled': {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
+}));
+
 const Bar = styled.div(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
@@ -80,6 +141,7 @@ const TIME_OPTIONS: { value: string; label: string }[] = [
   { value: '3days', label: '최근 4일' },
   { value: 'week', label: '최근 1주' },
   { value: 'month', label: '최근 1개월' },
+  { value: 'term', label: '직접 설정' },
 ];
 
 const ROUTE_OPTIONS: { value: string; label: string }[] = [
@@ -94,10 +156,19 @@ const TERMINAL_OPTIONS: { value: TerminalFilter; label: string }[] = [
   { value: 'GAM', label: '감만 GAM' },
 ];
 
+/** "YYYY-MM-DD" → {year, month, day} 분해. 실패 시 undefined. */
+function splitDate(s: string): { year: number; month: number; day: number } | undefined {
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (!m) return undefined;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
 export function LiveQueryPanel() {
   const [time, setTime] = useState<string>('3days');
   const [route, setRoute] = useState<string>('ALL');
   const [terminal, setTerminal] = useState<TerminalFilter>('SND');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
   const [confirmKind, setConfirmKind] = useState<'preview' | 'refresh' | null>(null);
 
   const preview = useCrawlerPreviewAndStore();
@@ -108,6 +179,24 @@ export function LiveQueryPanel() {
 
   const isBusy = preview.isPending || refresh.isPending;
   const backendBerth = terminalToBackendBerth(terminal);
+  const isTerm = time === 'term';
+  const termReady = isTerm ? Boolean(dateFrom && dateTo && dateFrom <= dateTo) : true;
+
+  /** crawler API 에 넘길 term date params (term 일 때만). */
+  function buildTermDates() {
+    if (!isTerm) return {};
+    const f = splitDate(dateFrom);
+    const t = splitDate(dateTo);
+    if (!f || !t) return {};
+    return {
+      year1: f.year,
+      month1: f.month,
+      day1: f.day,
+      year2: t.year,
+      month2: t.month,
+      day2: t.day,
+    };
+  }
 
   function requestPreview() {
     setConfirmKind('preview');
@@ -117,16 +206,28 @@ export function LiveQueryPanel() {
   }
 
   function doConfirm() {
+    const termDates = buildTermDates();
     if (confirmKind === 'preview') {
       preview.mutate(
-        { time, route, berth: backendBerth, skipVsfinder: true, limit: 500 },
+        { time, route, berth: backendBerth, skipVsfinder: true, limit: 500, ...termDates },
         {
-          onSuccess: (slice) =>
-            toast.notify({
-              tone: 'success',
-              title: '라이브 시나리오 로드 완료',
-              description: `${slice.rows.length}척 (crawled=${slice.meta.crawled}, dropped=${slice.meta.droppedInConversion})`,
-            }),
+          onSuccess: (slice) => {
+            // term + 0건이면 백엔드 미지원 가능성 → 명시적 안내.
+            if (isTerm && slice.rows.length === 0) {
+              toast.notify({
+                tone: 'warning',
+                title: '결과 0건 — 직접설정 모드 백엔드 미지원',
+                description:
+                  '백엔드가 아직 year/month/day 를 BPTC 로 forward 하지 않습니다. backend 확장 후 자동 동작.',
+              });
+            } else {
+              toast.notify({
+                tone: 'success',
+                title: '라이브 시나리오 로드 완료',
+                description: `${slice.rows.length}척 (crawled=${slice.meta.crawled}, dropped=${slice.meta.droppedInConversion})`,
+              });
+            }
+          },
           onError: (err) =>
             toast.notify({
               tone: 'danger',
@@ -137,14 +238,23 @@ export function LiveQueryPanel() {
       );
     } else if (confirmKind === 'refresh') {
       refresh.mutate(
-        { time, route, berth: backendBerth, replace: true },
+        { time, route, berth: backendBerth, replace: true, ...termDates },
         {
-          onSuccess: (r) =>
-            toast.notify({
-              tone: 'success',
-              title: 'BPT 테이블 갱신 완료',
-              description: `crawled=${r.crawled}, saved=${r.saved}, skipped=${r.skipped}`,
-            }),
+          onSuccess: (r) => {
+            if (isTerm && r.crawled === 0) {
+              toast.notify({
+                tone: 'warning',
+                title: 'BPT refresh 결과 0건 — 직접설정 모드 백엔드 미지원',
+                description: 'year/month/day forward 미구현 → BPTC term 모드가 빈 응답.',
+              });
+            } else {
+              toast.notify({
+                tone: 'success',
+                title: 'BPT 테이블 갱신 완료',
+                description: `crawled=${r.crawled}, saved=${r.saved}, skipped=${r.skipped}`,
+              });
+            }
+          },
           onError: (err) =>
             toast.notify({
               tone: 'danger',
@@ -158,6 +268,7 @@ export function LiveQueryPanel() {
   }
 
   return (
+    <Wrap>
     <Bar role="region" aria-label="라이브 BPTC 조회">
       <span className="title">
         <Satellite size={14} aria-hidden="true" />
@@ -216,8 +327,12 @@ export function LiveQueryPanel() {
         variant="secondary"
         size="sm"
         onClick={requestPreview}
-        disabled={isBusy}
-        title="BPTC 사이트를 크롤링해 풍부 시나리오로 변환. DB 저장 X."
+        disabled={isBusy || !termReady}
+        title={
+          !termReady
+            ? '직접 설정: 시작/끝 날짜 두 개를 선택하세요'
+            : 'BPTC 사이트를 크롤링해 풍부 시나리오로 변환. DB 저장 X.'
+        }
       >
         {preview.isPending ? <Loader2 size={12} aria-hidden="true" /> : <Satellite size={12} aria-hidden="true" />}
         라이브 시나리오 로드
@@ -226,8 +341,12 @@ export function LiveQueryPanel() {
       <Button
         size="sm"
         onClick={requestRefresh}
-        disabled={isBusy}
-        title="BPTC 크롤링 + BPT 테이블 영속화. 우측 BptPanel 자동 갱신."
+        disabled={isBusy || !termReady}
+        title={
+          !termReady
+            ? '직접 설정: 시작/끝 날짜 두 개를 선택하세요'
+            : 'BPTC 크롤링 + BPT 테이블 영속화. 우측 BptPanel 자동 갱신.'
+        }
       >
         {refresh.isPending ? <Loader2 size={12} aria-hidden="true" /> : <Database size={12} aria-hidden="true" />}
         BPT 테이블 refresh
@@ -242,6 +361,35 @@ export function LiveQueryPanel() {
           </Button>
         </span>
       )}
+    </Bar>
+
+    {isTerm && (
+      <TermRow role="group" aria-label="직접 설정 기간 입력">
+        <span className="label">조회 기간 직접 설정</span>
+        <DateInput
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          disabled={isBusy}
+          aria-label="시작 날짜"
+        />
+        <span className="sep">~</span>
+        <DateInput
+          type="date"
+          value={dateTo}
+          min={dateFrom || undefined}
+          onChange={(e) => setDateTo(e.target.value)}
+          disabled={isBusy}
+          aria-label="종료 날짜"
+        />
+        {dateFrom && dateTo && dateFrom > dateTo && (
+          <span className="warn">시작 ≤ 종료 가 되어야 합니다</span>
+        )}
+        <span className="note">
+          ⚠ backend 가 year/month/day 를 BPTC 로 forward 하지 않아 결과 0건일 수 있음 (backend 확장 후 정상)
+        </span>
+      </TermRow>
+    )}
 
       <ConfirmDialog
         open={confirmKind !== null}
@@ -266,7 +414,14 @@ export function LiveQueryPanel() {
         }
         detail={
           <>
-            time = <strong>{time}</strong> / route = <strong>{route}</strong> / berth ={' '}
+            time = <strong>{time}</strong>
+            {isTerm && (
+              <>
+                {' '}
+                ({dateFrom} ~ {dateTo})
+              </>
+            )}
+            {' / '}route = <strong>{route}</strong> / berth ={' '}
             <strong>
               {terminal} ({backendBerth})
             </strong>
@@ -277,6 +432,6 @@ export function LiveQueryPanel() {
         onConfirm={doConfirm}
         onCancel={() => setConfirmKind(null)}
       />
-    </Bar>
+    </Wrap>
   );
 }

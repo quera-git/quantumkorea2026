@@ -91,6 +91,8 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
     yaxis: {
       domain: [0.52, 1],
       range: [0, TERMINAL_LAYOUT.SND.yMax],
+      // 라벨 = 선석 경계 (0, 300, 600, 900, 1200, 1500)
+      dtick: TERMINAL_LAYOUT.SND.step,
       title: { text: 'SND (m)', standoff: 8 },
       gridcolor: gridColor,
       tickcolor: tickColor,
@@ -113,6 +115,8 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
     yaxis2: {
       domain: [0, 0.48],
       range: [0, TERMINAL_LAYOUT.GAM.yMax],
+      // 라벨 = 선석 경계 (0, 350, 700, 1050, 1400)
+      dtick: TERMINAL_LAYOUT.GAM.step,
       title: { text: 'GAM (m)', standoff: 8 },
       gridcolor: gridColor,
       tickcolor: tickColor,

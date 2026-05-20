@@ -69,6 +69,17 @@ export interface CrawlerQueryParams {
   berth: string;
   skipVsfinder?: boolean;
   limit?: number;
+  /**
+   * time="term" 일 때 BPTC 에 전달할 시작/끝 년/월/일.
+   * ⚠ 2026-05-20 현재 backend 가 forward 하지 않음 — backend 확장 후 자동 동작.
+   * extra query param 으로 보내두는 형태 (FastAPI 가 무시).
+   */
+  year1?: number;
+  month1?: number;
+  day1?: number;
+  year2?: number;
+  month2?: number;
+  day2?: number;
 }
 
 export interface CrawlerRefreshParams extends CrawlerQueryParams {
@@ -76,6 +87,19 @@ export interface CrawlerRefreshParams extends CrawlerQueryParams {
   replace?: boolean;
   /** ISO8601. ETA_int=0 기준점. 미지정 시 가장 빠른 ETA 자동. */
   referenceTime?: string;
+}
+
+/** term 일 때만 채워지는 date param 객체. backend 가 무시할 수도 있음. */
+function termDateParams(p: CrawlerQueryParams): Record<string, number | undefined> {
+  if (p.time !== 'term') return {};
+  return {
+    year1: p.year1,
+    month1: p.month1,
+    day1: p.day1,
+    year2: p.year2,
+    month2: p.month2,
+    day2: p.day2,
+  };
 }
 
 export async function getCrawlerPreview(
@@ -88,6 +112,7 @@ export async function getCrawlerPreview(
       berth: params.berth,
       skip_vsfinder: params.skipVsfinder ?? true,
       limit: params.limit ?? 200,
+      ...termDateParams(params),
     },
   });
   return CrawlerPreviewResponseSchema.parse(data);
@@ -103,6 +128,7 @@ export async function postCrawlerRefresh(
       berth: params.berth,
       replace: params.replace ?? true,
       reference_time: params.referenceTime,
+      ...termDateParams(params),
     },
   });
   return CrawlerRefreshResponseSchema.parse(data);
