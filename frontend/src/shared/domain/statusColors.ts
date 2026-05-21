@@ -11,6 +11,8 @@
 
 import type { PlanStatus } from './types';
 
+export type { PlanStatus };
+
 export interface PlanStatusVisual {
   /** 한글 라벨 — 사이트 노출 문구 그대로. */
   label: string;
