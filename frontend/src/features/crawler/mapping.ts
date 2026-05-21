@@ -1,5 +1,5 @@
 // 우리 SearchBar / 풍부 도메인 ↔ 백엔드 crawler enum 매핑.
-// 백엔드 crawler 의 berth enum 이 Streamlit 원본(A/S/G)과 다르게 'A'=신선대 / 'B'=감만 형식.
+// 백엔드 crawler 의 berth enum: 'A'=전체 / 'S'=신선대 / 'G'=감만 (BPTC 사이트 v_gu 폼값 그대로).
 // 그 외 enum (time/route) 은 동일.
 
 import type { TerminalFilter } from '@/features/search/searchFilter';
@@ -8,20 +8,19 @@ import type { TerminalFilter } from '@/features/search/searchFilter';
 export function terminalToBackendBerth(filter: TerminalFilter): string {
   switch (filter) {
     case 'SND':
-      return 'A';
+      return 'S';
     case 'GAM':
-      return 'B';
+      return 'G';
     case 'ALL':
     default:
-      // 백엔드는 'ALL' 자체를 지원할 수도, 'A' 로 default 일 수도 있음 — 일단 'A' 신선대 fallback.
       return 'A';
   }
 }
 
 /** 백엔드 라우터의 berth enum → 우리 terminal. */
 export function backendBerthToTerminal(berth: string): TerminalFilter {
-  if (berth === 'A') return 'SND';
-  if (berth === 'B') return 'GAM';
+  if (berth === 'S') return 'SND';
+  if (berth === 'G') return 'GAM';
   return 'ALL';
 }
 

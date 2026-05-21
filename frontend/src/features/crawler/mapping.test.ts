@@ -3,23 +3,26 @@ import { describe, expect, it } from 'vitest';
 import { backendBerthToTerminal, inferTimeEnum, terminalToBackendBerth } from './mapping';
 
 describe('terminalToBackendBerth', () => {
-  it('SND → A', () => {
-    expect(terminalToBackendBerth('SND')).toBe('A');
+  it('SND → S (신선대)', () => {
+    expect(terminalToBackendBerth('SND')).toBe('S');
   });
-  it('GAM → B', () => {
-    expect(terminalToBackendBerth('GAM')).toBe('B');
+  it('GAM → G (감만)', () => {
+    expect(terminalToBackendBerth('GAM')).toBe('G');
   });
-  it('ALL → A (fallback)', () => {
+  it('ALL → A (전체)', () => {
     expect(terminalToBackendBerth('ALL')).toBe('A');
   });
 });
 
 describe('backendBerthToTerminal', () => {
-  it('A → SND', () => {
-    expect(backendBerthToTerminal('A')).toBe('SND');
+  it('S → SND', () => {
+    expect(backendBerthToTerminal('S')).toBe('SND');
   });
-  it('B → GAM', () => {
-    expect(backendBerthToTerminal('B')).toBe('GAM');
+  it('G → GAM', () => {
+    expect(backendBerthToTerminal('G')).toBe('GAM');
+  });
+  it('A → ALL', () => {
+    expect(backendBerthToTerminal('A')).toBe('ALL');
   });
   it('unknown → ALL', () => {
     expect(backendBerthToTerminal('?')).toBe('ALL');

@@ -155,6 +155,7 @@ const ROUTE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const TERMINAL_OPTIONS: { value: TerminalFilter; label: string }[] = [
+  { value: 'ALL', label: '전체 (신선대+감만)' },
   { value: 'SND', label: '신선대 SND' },
   { value: 'GAM', label: '감만 GAM' },
 ];
@@ -162,7 +163,7 @@ const TERMINAL_OPTIONS: { value: TerminalFilter; label: string }[] = [
 export function LiveQueryPanel() {
   const [time, setTime] = useState<string>('3days');
   const [route, setRoute] = useState<string>('ALL');
-  const [terminal, setTerminal] = useState<TerminalFilter>('SND');
+  const [terminal, setTerminal] = useState<TerminalFilter>('ALL');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [confirmKind, setConfirmKind] = useState<'preview' | 'refresh' | null>(null);

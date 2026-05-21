@@ -68,7 +68,7 @@ export interface CrawlerQueryParams {
   time: string;
   /** "ALL" | "EA" | "JP" | "CN". */
   route: string;
-  /** 백엔드 enum: "A" = 신선대, "B" = 감만 (Streamlit 원본과 다름). */
+  /** 백엔드 enum: "A" = 전체 / "S" = 신선대 / "G" = 감만. BPTC 사이트 v_gu 폼값. */
   berth: string;
   skipVsfinder?: boolean;
   limit?: number;
