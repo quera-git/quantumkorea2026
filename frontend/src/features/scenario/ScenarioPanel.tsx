@@ -20,6 +20,8 @@ import { useEditorStore } from '@/features/editor/editor.store';
 import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
+import { UploadButton } from '@/features/upload/UploadButton';
+import { useUploadedScenarioStore } from '@/features/upload/uploadedScenarioStore';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
@@ -44,6 +46,7 @@ const PillRow = styled.div(({ theme }) => ({
   display: 'flex',
   flexWrap: 'wrap',
   gap: theme.spacing(2),
+  alignItems: 'center',
 }));
 
 const Pill = styled('button', {
@@ -59,6 +62,30 @@ const Pill = styled('button', {
   cursor: 'pointer',
   transition: `background ${theme.motion.duration.fast} ${theme.motion.easing.standard}, color ${theme.motion.duration.fast} ${theme.motion.easing.standard}`,
   '&:hover': { background: active ? theme.color.primarySoft : theme.color.surfaceAlt },
+  '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
+}));
+
+// 업로드 시나리오 pill — 본체 + 삭제 X 버튼이 inline 으로 붙는 grouped pill.
+const UploadedPillGroup = styled.div(({ theme }) => ({
+  display: 'inline-flex',
+  alignItems: 'stretch',
+  borderRadius: theme.radius.pill,
+  overflow: 'hidden',
+  border: `1px solid ${theme.color.border}`,
+
+  '& > button + button': { borderLeft: `1px solid ${theme.color.border}` },
+  '& > button': { border: 'none', borderRadius: 0 },
+}));
+
+const RemoveButton = styled.button(({ theme }) => ({
+  padding: '6px 8px',
+  background: theme.color.surface,
+  color: theme.color.textMuted,
+  cursor: 'pointer',
+  fontSize: theme.font.size.sm,
+  fontFamily: theme.font.mono,
+  lineHeight: 1,
+  '&:hover': { background: theme.color.dangerSoft, color: theme.color.danger },
   '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
 }));
 
@@ -159,11 +186,23 @@ export function ScenarioPanel() {
   const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
   const liveScenario = useLiveScenarioStore((s) => s.current);
+  const uploadedScenarios = useUploadedScenarioStore((s) => s.scenarios);
+  const removeUploaded = useUploadedScenarioStore((s) => s.remove);
 
-  // 시나리오 = 정적 4개 + 라이브 1개(있을 때).
-  // 라이브가 있고 activeId 가 그것을 가리키면 메모리 시나리오 사용, 아니면 정적 loader.
+  // 시나리오 = 정적 4개 + 라이브 1개(있을 때) + 업로드 N개.
+  // 우선순위: 업로드 > 라이브 > 정적 (id 충돌 시).
   const scenario = useMemo(() => {
     if (!activeId) return null;
+    const uploaded = uploadedScenarios.find((s) => s.id === activeId);
+    if (uploaded) {
+      return {
+        scenarioId: uploaded.id,
+        label: uploaded.label,
+        sourceFile: uploaded.sourceFile,
+        rowCount: uploaded.rows.length,
+        rows: uploaded.rows,
+      };
+    }
     if (liveScenario && activeId === liveScenario.id) {
       return {
         scenarioId: liveScenario.id,
@@ -179,7 +218,7 @@ export function ScenarioPanel() {
       console.error('scenario load failed', e);
       return null;
     }
-  }, [activeId, liveScenario]);
+  }, [activeId, liveScenario, uploadedScenarios]);
 
   const stats = useMemo(() => {
     if (!scenario) return null;
@@ -249,6 +288,29 @@ export function ScenarioPanel() {
               🔴 {liveScenario.label}
             </Pill>
           )}
+          {uploadedScenarios.map((s) => (
+            <UploadedPillGroup key={s.id}>
+              <Pill
+                active={s.id === activeId}
+                onClick={() => setActiveId(s.id)}
+                title={`${s.sourceFile} · ${s.rows.length}척 · ${s.format}`}
+              >
+                📎 {s.label}
+              </Pill>
+              <RemoveButton
+                onClick={() => {
+                  if (!window.confirm(`업로드 시나리오 "${s.label}" 을 삭제할까요?`)) return;
+                  removeUploaded(s.id);
+                  if (s.id === activeId) setActiveId(SCENARIO_LIST[0]?.id ?? '');
+                }}
+                aria-label={`${s.label} 시나리오 삭제`}
+                title="삭제"
+              >
+                ×
+              </RemoveButton>
+            </UploadedPillGroup>
+          ))}
+          <UploadButton onAdded={(id) => setActiveId(id)} />
         </PillRow>
 
         {stats && (

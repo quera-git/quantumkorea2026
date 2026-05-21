@@ -46,6 +46,29 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   globalThis.IntersectionObserver = IOStub as unknown as typeof IntersectionObserver;
 }
 
+// jsdom 의 Blob 에 text() / arrayBuffer() 메서드가 없는 버전 — File 업로드 테스트가
+// `file.text is not a function` 으로 깨진다. 브라우저는 다 지원하므로 폴리필만 둠.
+if (typeof Blob.prototype.text !== 'function') {
+  Blob.prototype.text = function () {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(this);
+    });
+  };
+}
+if (typeof Blob.prototype.arrayBuffer !== 'function') {
+  Blob.prototype.arrayBuffer = function () {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 // jsdom 의 일부 버전엔 PointerEvent 가 global 로 없어 SVG drag/click 테스트가 깨진다.
 // MouseEvent 를 상속한 최소 polyfill 만 등록 (pointerId / pointerType / isPrimary 필드).
 if (typeof globalThis.PointerEvent === 'undefined') {
