@@ -1,9 +1,18 @@
+// 선석 배정 결과 간트 (1D ScheduleEntry).
+// Phase 9 — Plotly hover/click 을 우리 VesselHoverCard/VesselDetailDialog 로 라우팅.
+// reference time 정보가 없어 dialog 의 ISO 시간은 "-" 로 표시되지만, voyage/길이/B.P. 등
+// 핵심 메타는 보임.
+
 import { useTheme } from '@emotion/react';
-import type { Layout, PlotData } from 'plotly.js';
+import { useMemo, useState } from 'react';
+import type { Layout, PlotData, PlotMouseEvent } from 'plotly.js';
 
 import { Plot } from '@/shared/ui/Plot';
 import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
+import { scheduleEntryToAssignment } from '@/shared/domain/vesselAdapters';
 import type { ScheduleEntry } from '@/shared/types/schema';
+import { VesselDetailDialog } from '@/shared/ui/VesselDetailDialog';
+import { VesselHoverCard } from '@/shared/ui/VesselHoverCard';
 
 interface Props {
   schedule: ScheduleEntry[];
@@ -24,6 +33,7 @@ interface Props {
  * - X축: 시간(시간 단위, eta_int 와 동일 스케일)
  * - Y축: 접안 위치(m)
  * - 각 막대는 [etb, etd] 구간을 길이 비례 두께로 표시.
+ * - trace 호버 → 카드 (vessel/길이/B.P./hour offset). 클릭 → dialog.
  */
 export function GanttChart({ schedule, height = 480, yRange, xRange, title, terminal }: Props) {
   const theme = useTheme();
@@ -31,6 +41,23 @@ export function GanttChart({ schedule, height = 480, yRange, xRange, title, term
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
   const plotBg = isDark ? 'rgba(255,255,255,0.02)' : '#fafbfd';
   const tickColor = isDark ? theme.color.textMuted : '#475569';
+
+  const [hover, setHover] = useState<{ vesselId: string; x: number; y: number } | null>(null);
+  const [detailVesselId, setDetailVesselId] = useState<string | null>(null);
+
+  // schedule entry 의 vessel_id → Assignment-like (메모).
+  const assignmentByVesselId = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof scheduleEntryToAssignment>>();
+    schedule.forEach((s, i) => {
+      m.set(s.vessel_id, scheduleEntryToAssignment(s, i, null));
+    });
+    return m;
+  }, [schedule]);
+
+  const hoverAssignment = hover ? (assignmentByVesselId.get(hover.vesselId) ?? null) : null;
+  const detailAssignment = detailVesselId
+    ? (assignmentByVesselId.get(detailVesselId) ?? null)
+    : null;
 
   if (schedule.length === 0) {
     return (
@@ -53,8 +80,8 @@ export function GanttChart({ schedule, height = 480, yRange, xRange, title, term
     mode: 'lines',
     line: { width: Math.max(8, entry.length / 20) },
     name: entry.vessel_id,
-    hovertext: `${entry.vessel_id} (L=${entry.length}m) @ ${entry.berth_position}m${entry.note ? ` · ${entry.note}` : ''}`,
-    hoverinfo: 'x+text',
+    hoverinfo: 'none',
+    customdata: [entry.vessel_id, entry.vessel_id] as unknown as PlotData['customdata'],
     type: 'scatter',
   }));
 
@@ -85,13 +112,48 @@ export function GanttChart({ schedule, height = 480, yRange, xRange, title, term
     font: { family: 'Pretendard Variable, system-ui, sans-serif', color: theme.color.text },
   };
 
+  function vesselIdFromEvent(ev: Readonly<PlotMouseEvent>): string | null {
+    const p = ev.points?.[0];
+    if (!p) return null;
+    const cd = (p as { customdata?: unknown }).customdata;
+    return typeof cd === 'string' ? cd : null;
+  }
+  function clientXYFromEvent(ev: Readonly<PlotMouseEvent>): { x: number; y: number } | null {
+    const ne = ev.event as MouseEvent | undefined;
+    if (!ne || typeof ne.clientX !== 'number' || typeof ne.clientY !== 'number') return null;
+    return { x: ne.clientX, y: ne.clientY };
+  }
+
   return (
-    <Plot
-      data={data}
-      layout={layout}
-      config={{ displayModeBar: false, responsive: true }}
-      style={{ width: '100%' }}
-      useResizeHandler
-    />
+    <>
+      <Plot
+        data={data}
+        layout={layout}
+        config={{ displayModeBar: false, responsive: true }}
+        style={{ width: '100%' }}
+        useResizeHandler
+        onHover={(ev) => {
+          const vid = vesselIdFromEvent(ev);
+          const xy = clientXYFromEvent(ev);
+          if (!vid || !xy) return;
+          setHover({ vesselId: vid, x: xy.x, y: xy.y });
+        }}
+        onUnhover={() => setHover(null)}
+        onClick={(ev) => {
+          const vid = vesselIdFromEvent(ev);
+          if (!vid) return;
+          setHover(null);
+          setDetailVesselId(vid);
+        }}
+      />
+      {hover && hoverAssignment && (
+        <VesselHoverCard assignment={hoverAssignment} anchorX={hover.x} anchorY={hover.y} />
+      )}
+      <VesselDetailDialog
+        open={detailVesselId !== null}
+        assignment={detailAssignment}
+        onClose={() => setDetailVesselId(null)}
+      />
+    </>
   );
 }
