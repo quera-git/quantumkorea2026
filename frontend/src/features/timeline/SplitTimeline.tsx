@@ -4,7 +4,10 @@ import type { Annotations, Layout, PlotData, Shape } from 'plotly.js';
 
 import { Plot } from '@/shared/ui/Plot';
 import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
+import { planStatusVisual } from '@/shared/domain/statusColors';
 import type { Assignment } from '@/shared/domain/types';
+
+import { useColorBy, type ColorByMode } from './colorBy';
 
 interface Props {
   assignments: Assignment[];
@@ -61,10 +64,11 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
   const plotBg = isDark ? 'rgba(255,255,255,0.02)' : '#fafbfd';
   const tickColor = isDark ? theme.color.textMuted : '#475569';
+  const colorBy = useColorBy((s) => s.mode);
 
   const { traces, shapes, annotations, computedXRange } = useMemo(
-    () => buildFigure(assignments, xRange),
-    [assignments, xRange],
+    () => buildFigure(assignments, xRange, colorBy),
+    [assignments, xRange, colorBy],
   );
 
   const layout: Partial<Layout> = {
@@ -150,6 +154,7 @@ interface FigureBuild {
 function buildFigure(
   assignments: Assignment[],
   xRangeProp: [string, string] | undefined,
+  colorBy: ColorByMode,
 ): FigureBuild {
   const traces: Partial<PlotData>[] = [];
   const shapes: Partial<Shape>[] = [];
@@ -174,10 +179,23 @@ function buildFigure(
 
     const yLo = Math.min(a.f, a.e);
     const yHi = Math.max(a.f, a.e);
-    const color = colorForVoyage(a.voyage);
     const axisSuffix = a.terminal === 'SND' ? '' : '2';
     const xAxisRef = `x${axisSuffix}` as 'x' | 'x2';
     const yAxisRef = `y${axisSuffix}` as 'y' | 'y2';
+
+    let fillColor: string;
+    let strokeColor: string;
+    if (colorBy === 'status') {
+      const v = planStatusVisual(a.planStatus);
+      fillColor = v.fill;
+      strokeColor = v.stroke;
+    } else {
+      const voyageColor = colorForVoyage(a.voyage);
+      fillColor = rgbaWithAlpha(voyageColor, 0.55);
+      strokeColor = voyageColor;
+    }
+
+    const statusLabel = a.planStatus ? planStatusVisual(a.planStatus).label : '미지정';
 
     traces.push({
       type: 'scatter',
@@ -187,12 +205,13 @@ function buildFigure(
       xaxis: xAxisRef,
       yaxis: yAxisRef,
       fill: 'toself',
-      fillcolor: rgbaWithAlpha(color, 0.55),
-      line: { color, width: 1.2 },
+      fillcolor: fillColor,
+      line: { color: strokeColor, width: 1.2 },
       hoverinfo: 'text',
       hovertext:
         `${a.voyage} · ${a.vessel ?? ''}` +
         `<br>terminal=${a.terminal} berth=${a.berth} (${a.company ?? ''})` +
+        `<br>상태: ${statusLabel}` +
         `<br>start=${start.replace('T', ' ').slice(0, 16)}` +
         `<br>end=${end.replace('T', ' ').slice(0, 16)}` +
         `<br>f=${a.f}m e=${a.e}m length=${a.length ?? '-'}m`,

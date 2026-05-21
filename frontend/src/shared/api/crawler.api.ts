@@ -30,6 +30,9 @@ export const CrawlerRawRowSchema = z
     bp: z.number().nullable().optional(),
     f: z.number().nullable().optional(),
     e: z.number().nullable().optional(),
+    // BPTC 선석배정 그래픽(G) 의 VslMsg plan_cd raw 값.
+    // L=적하완료 / D=양하완료 / C=크래인배정 / 그 외=크래인미배정 / 미게재=null.
+    plan_cd: z.string().nullable().optional(),
   })
   // 백엔드가 추가 컬럼을 더 노출할 가능성 — passthrough 로 받기만 함.
   .passthrough();
@@ -70,16 +73,12 @@ export interface CrawlerQueryParams {
   skipVsfinder?: boolean;
   limit?: number;
   /**
-   * time="term" 일 때 BPTC 에 전달할 시작/끝 년/월/일.
-   * ⚠ 2026-05-20 현재 backend 가 forward 하지 않음 — backend 확장 후 자동 동작.
-   * extra query param 으로 보내두는 형태 (FastAPI 가 무시).
+   * time="term" 일 때 BPTC 에 전달할 직접입력 구간 (YYYY-MM-DD).
+   * backend 가 ISO date 두 개 (start_date, end_date) 로 받아 BPTC 사이트의
+   * YEAR1/MONTH1/DAY1 + YEAR2/MONTH2/DAY2 폼으로 분해 forward.
    */
-  year1?: number;
-  month1?: number;
-  day1?: number;
-  year2?: number;
-  month2?: number;
-  day2?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 export interface CrawlerRefreshParams extends CrawlerQueryParams {
@@ -89,16 +88,12 @@ export interface CrawlerRefreshParams extends CrawlerQueryParams {
   referenceTime?: string;
 }
 
-/** term 일 때만 채워지는 date param 객체. backend 가 무시할 수도 있음. */
-function termDateParams(p: CrawlerQueryParams): Record<string, number | undefined> {
+/** term 일 때만 채워지는 date param 객체. */
+function termDateParams(p: CrawlerQueryParams): Record<string, string | undefined> {
   if (p.time !== 'term') return {};
   return {
-    year1: p.year1,
-    month1: p.month1,
-    day1: p.day1,
-    year2: p.year2,
-    month2: p.month2,
-    day2: p.day2,
+    start_date: p.startDate,
+    end_date: p.endDate,
   };
 }
 

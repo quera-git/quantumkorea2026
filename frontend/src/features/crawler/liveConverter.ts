@@ -9,7 +9,7 @@
 
 import type { CrawlerRawRow } from '@/shared/api/crawler.api';
 import { inferTerminalFromBerth } from '@/shared/domain';
-import type { Assignment } from '@/shared/domain/types';
+import type { Assignment, PlanStatus } from '@/shared/domain/types';
 
 /** "2026/05/19 04:00" → ISO 8601 (local). 실패 시 null. */
 function parseKrDate(s: string | undefined): string | null {
@@ -40,6 +40,25 @@ function sectionToTerminal(section: string | undefined): Assignment['terminal'] 
   if (s === '신선대') return 'SND';
   if (s === '감만') return 'GAM';
   return '';
+}
+
+/**
+ * BPTC 선석배정 그래픽 plan_cd → PlanStatus.
+ * backend services/crawler/mapper.py 의 _PLAN_CD_TO_STATUS 와 1:1.
+ *   L → loading_planned
+ *   D → discharge_planned
+ *   C → crane_assigned
+ *   그 외 비어있지 않은 값 → crane_unassigned
+ *   null/undefined/빈문자 → null (그래픽 미게재)
+ */
+function planCdToStatus(planCd: string | null | undefined): PlanStatus | null {
+  if (planCd == null) return null;
+  const s = planCd.trim();
+  if (!s) return null;
+  if (s === 'L') return 'loading_planned';
+  if (s === 'D') return 'discharge_planned';
+  if (s === 'C') return 'crane_assigned';
+  return 'crane_unassigned';
 }
 
 /** 한 row 변환. 누락이 많으면 null 반환 (필터에서 제거). */
@@ -87,6 +106,7 @@ export function convertCrawledRow(raw: CrawlerRawRow, idx: number): Assignment |
       start && end
         ? Math.round(((Date.parse(end) - Date.parse(start)) / 3_600_000) * 10) / 10
         : null,
+    planStatus: planCdToStatus(raw.plan_cd),
   };
 }
 

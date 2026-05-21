@@ -11,7 +11,9 @@ import styled from '@emotion/styled';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { TERMINAL_LAYOUT, inferBerthFromY, type Terminal } from '@/shared/domain';
+import { planStatusVisual } from '@/shared/domain/statusColors';
 import type { Assignment } from '@/shared/domain/types';
+import { useColorBy } from '@/features/timeline/colorBy';
 
 import { useEditorStore, type MovePatch } from './editor.store';
 import { useEditorIssueIndex } from './useValidationIssues';
@@ -117,6 +119,7 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
   const applyMove = useEditorStore((s) => s.applyMove);
   const selectRow = useEditorStore((s) => s.selectRow);
   const selectedRowId = useEditorStore((s) => s.selectedRowId);
+  const colorBy = useColorBy((s) => s.mode);
   const { invalidRowIds, messagesByRowId } = useEditorIssueIndex();
 
   // 드래그 중 표시할 임시 패치(터미널별×rowId 단위).
@@ -423,17 +426,26 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
               const isDragging = drafts[r.rowId] != null;
               const isInvalid = invalidRowIds.has(r.rowId);
               const issues = messagesByRowId.get(r.rowId);
-              const fill = isInvalid
-                ? 'rgba(220, 38, 38, 0.30)'
-                : colorForVoyage(r.voyage, terminal, isSel);
-              // 우선순위: 선택 > invalid > 드래그 중 > 기본
+              // 우선순위: invalid > 선택 > colorBy(status|voyage)
+              let fill: string;
+              if (isInvalid) {
+                fill = 'rgba(220, 38, 38, 0.30)';
+              } else if (isSel) {
+                fill = 'rgba(37, 99, 235, 0.85)';
+              } else if (colorBy === 'status') {
+                fill = planStatusVisual(r.planStatus).fill;
+              } else {
+                fill = colorForVoyage(r.voyage, terminal, false);
+              }
               const stroke = isSel
                 ? 'rgba(37, 99, 235, 0.95)'
                 : isInvalid
                   ? 'rgba(220, 38, 38, 0.95)'
                   : isDragging
                     ? 'rgba(37, 99, 235, 0.85)'
-                    : defaultBarStroke;
+                    : colorBy === 'status' && r.planStatus
+                      ? planStatusVisual(r.planStatus).stroke
+                      : defaultBarStroke;
               const strokeWidth = isSel || isInvalid ? 2 : 1;
               const label = r.voyage || r.vessel || '';
 

@@ -36,6 +36,8 @@ const SplitTimeline = lazy(() =>
   import('@/features/timeline/SplitTimeline').then((m) => ({ default: m.SplitTimeline })),
 );
 
+import { StatusLegend } from '@/features/timeline/StatusLegend';
+
 import { SCENARIO_LIST, loadScenario } from './scenarioLoader';
 
 const PillRow = styled.div(({ theme }) => ({
@@ -339,14 +341,18 @@ export function ScenarioPanel() {
         </TabRow>
 
         {scenario && view === 'timeline' && (
-          <Suspense fallback={<Skeleton height={680} radius="md" />}>
-            <SplitTimeline assignments={displayRows} />
-          </Suspense>
+          <Stack gap={3}>
+            <StatusLegend rows={displayRows} />
+            <Suspense fallback={<Skeleton height={680} radius="md" />}>
+              <SplitTimeline assignments={displayRows} />
+            </Suspense>
+          </Stack>
         )}
 
         {scenario && view === 'editor' && (
           <Stack gap={3}>
             <EditorActionsBar />
+            <StatusLegend rows={editorRows} />
             <EditorGrid>
               <EditorCanvas assignments={editorRows} />
               <SelectedVesselPanel />
