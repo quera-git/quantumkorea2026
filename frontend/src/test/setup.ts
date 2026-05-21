@@ -46,6 +46,23 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   globalThis.IntersectionObserver = IOStub as unknown as typeof IntersectionObserver;
 }
 
+// jsdom 의 일부 버전엔 PointerEvent 가 global 로 없어 SVG drag/click 테스트가 깨진다.
+// MouseEvent 를 상속한 최소 polyfill 만 등록 (pointerId / pointerType / isPrimary 필드).
+if (typeof globalThis.PointerEvent === 'undefined') {
+  class PointerEventPolyfill extends MouseEvent {
+    pointerId: number;
+    pointerType: string;
+    isPrimary: boolean;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+      this.pointerType = init.pointerType ?? '';
+      this.isPrimary = init.isPrimary ?? false;
+    }
+  }
+  globalThis.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
+}
+
 // jsdom 에 matchMedia 가 없어 styled component 일부 코드가 깨질 수 있어 polyfill.
 if (typeof window !== 'undefined' && !window.matchMedia) {
   window.matchMedia = (query: string) =>

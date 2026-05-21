@@ -13,6 +13,8 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import { TERMINAL_LAYOUT, inferBerthFromY, type Terminal } from '@/shared/domain';
 import { planStatusVisual } from '@/shared/domain/statusColors';
 import type { Assignment } from '@/shared/domain/types';
+import { VesselDetailDialog } from '@/shared/ui/VesselDetailDialog';
+import { VesselHoverCard } from '@/shared/ui/VesselHoverCard';
 import { useColorBy } from '@/features/timeline/colorBy';
 
 import { useEditorStore, type MovePatch } from './editor.store';
@@ -129,6 +131,17 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
   const pendingDraftRef = useRef<{ rowId: string; patch: DraftPatch | null } | null>(null);
   const terminalSvgRefs = useRef<Record<Terminal, SVGSVGElement | null>>({ SND: null, GAM: null });
 
+  // 호버 카드 / 자세히 보기 다이얼로그 state.
+  const [hover, setHover] = useState<{ rowId: string; x: number; y: number } | null>(null);
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
+  const assignmentByRowId = useMemo(() => {
+    const m = new Map<string, Assignment>();
+    for (const a of assignments) m.set(a.rowId, a);
+    return m;
+  }, [assignments]);
+  const hoverAssignment = hover ? (assignmentByRowId.get(hover.rowId) ?? null) : null;
+  const detailAssignment = detailRowId ? (assignmentByRowId.get(detailRowId) ?? null) : null;
+
   // assignments 가 새로 들어오면 drafts 초기화.
   useEffect(() => {
     setDrafts({});
@@ -235,7 +248,14 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
       const newBerth = inferBerthFromY(st.terminal, newMid) ?? 0;
       const newStartMs = st.baseStartMs + dmin * 60_000;
       const newEndMs = st.baseEndMs + dmin * 60_000;
-      const moved = dmin !== 0 || Math.abs(newMid - st.baseY) >= 1e-6;
+      // 사용자가 포인터를 의미 있게 움직였는가 (3px 미만 = 클릭 의도).
+      // baseY 가 30m snap 그리드와 안 맞는 막대를 클릭만 해도 snap 으로 mid 가 미세
+      // 변동될 수 있어, snap 결과(newMid) 단독으로 판정하면 클릭이 이동으로 오분류됨.
+      const dxPx = Math.abs(evt.clientX - st.startClientX);
+      const dyPx = Math.abs(evt.clientY - st.startClientY);
+      const pointerMoved = dxPx >= 3 || dyPx >= 3;
+      const moved =
+        pointerMoved && (dmin !== 0 || Math.abs(newMid - st.baseY) >= 1e-6);
       return { moved, newStartMs, newEndMs, newF, newE, newYMid: newMid, newBerth };
     }
 
@@ -262,7 +282,11 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
         return next;
       });
       dragRef.current = null;
-      if (!t.moved) return;
+      if (!t.moved) {
+        // 드래그 거리 0 — 클릭으로 간주하고 자세히 보기 다이얼로그 오픈.
+        setDetailRowId(st.rowId);
+        return;
+      }
       const patch: MovePatch = {
         start: new Date(t.newStartMs).toISOString(),
         end: new Date(t.newEndMs).toISOString(),
@@ -449,14 +473,9 @@ export function EditorCanvas({ assignments, disabled = false }: Props) {
               const strokeWidth = isSel || isInvalid ? 2 : 1;
               const label = r.voyage || r.vessel || '';
 
-              const tooltipBase = `${terminal}-${r.berth} · ${r.voyage}
-${r.vessel ?? ''} · ${r.company ?? ''}
-start=${(r.start ?? '').replace('T', ' ')}
-end=${(r.end ?? '').replace('T', ' ')}
-f=${r.f}m e=${r.e}m`;
-              const tooltip = issues
-                ? `${tooltipBase}\n\n⚠ ${issues.join('\n⚠ ')}`
-                : tooltipBase;
+              const ariaLabel = issues
+                ? `${terminal}-${r.berth} ${r.voyage} (${issues.length}개 이슈)`
+                : `${terminal}-${r.berth} ${r.voyage}`;
 
               return (
                 <g key={`${terminal}-bar-${r.rowId}`}>
@@ -472,11 +491,26 @@ f=${r.f}m e=${r.e}m`;
                     rx={4}
                     ry={4}
                     cursor={disabled ? 'default' : 'grab'}
+                    aria-label={ariaLabel}
                     onPointerDown={startDrag(r)}
+                    onPointerEnter={(e) => {
+                      if (dragRef.current) return;
+                      setHover({ rowId: r.rowId, x: e.clientX, y: e.clientY });
+                    }}
+                    onPointerMove={(e) => {
+                      if (dragRef.current) return;
+                      setHover((prev) =>
+                        prev && prev.rowId === r.rowId
+                          ? { ...prev, x: e.clientX, y: e.clientY }
+                          : { rowId: r.rowId, x: e.clientX, y: e.clientY },
+                      );
+                    }}
+                    onPointerLeave={() => {
+                      if (dragRef.current) return;
+                      setHover((prev) => (prev?.rowId === r.rowId ? null : prev));
+                    }}
                     style={{ touchAction: 'none' }}
-                  >
-                    <title>{tooltip}</title>
-                  </rect>
+                  />
                   {isInvalid && (
                     <text
                       x={xS + 4}
@@ -511,9 +545,23 @@ f=${r.f}m e=${r.e}m`;
   }
 
   return (
-    <Wrap>
-      {TERMINAL_ORDER.map((t) => renderTerminal(t))}
-    </Wrap>
+    <>
+      <Wrap>{TERMINAL_ORDER.map((t) => renderTerminal(t))}</Wrap>
+      {hover && hoverAssignment && (
+        <VesselHoverCard
+          assignment={hoverAssignment}
+          anchorX={hover.x}
+          anchorY={hover.y}
+          issues={messagesByRowId.get(hover.rowId)}
+        />
+      )}
+      <VesselDetailDialog
+        open={detailRowId !== null}
+        assignment={detailAssignment}
+        onClose={() => setDetailRowId(null)}
+        issues={detailRowId ? messagesByRowId.get(detailRowId) : undefined}
+      />
+    </>
   );
 }
 

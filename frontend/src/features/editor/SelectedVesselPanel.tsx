@@ -140,6 +140,9 @@ export function SelectedVesselPanel({ keyboardEnabled = true }: Props) {
     function onKey(e: KeyboardEvent) {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      // 모달/다이얼로그 안의 키 입력은 nudge 로 가로채지 않는다.
+      // (ConfirmDialog / VesselDetailDialog 등 role="dialog" 가진 portal 자식)
+      if (t && t.closest('[role="dialog"]')) return;
 
       // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z = redo
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
