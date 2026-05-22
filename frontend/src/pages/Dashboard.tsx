@@ -49,9 +49,20 @@ const Layout = styled.div(({ theme }) => ({
 }));
 
 /**
- * 좌측 컬럼 — SectionNav (상단 sticky) 위에 vessel detail panel 을 차곡차곡.
- * SelectedVesselPanel 은 SectionNav 의 sticky 아래로 자연스럽게 따라옴 — 길어지면
- * 그 위치에서 자체 스크롤이 발생하지 않고 페이지 전체가 스크롤됨.
+ * 좌측 사이드바 — Notion/Linear 패턴: 사이드바 전체가 한 단위로 sticky 하고
+ * 내부에서만 scroll 됨. 메인 컬럼과 독립적인 scroll context 라 sticky overlap /
+ * 본문이 사이드바 뒤로 비치는 문제가 발생하지 않음.
+ *
+ * 데스크탑:
+ *   - position: sticky (top: 72) — AppBar 아래 위치
+ *   - max-height: calc(100vh - 96px) — viewport 안에 갇힘
+ *   - overflow-y: auto — SectionNav + SelectedVesselPanel 합쳐서 길어지면 내부 scroll
+ *   - overscroll-behavior: contain — 사이드바 scroll 이 페이지 scroll 로 새지 않음
+ *   - 스크롤바는 항상 미세하게 노출 (modern thin scrollbar) — content 가 잘려있다는 visual hint
+ *
+ * 모바일 (≤1024px):
+ *   - sticky 해제 — SectionNav 자체가 horizontal strip 으로 자체 sticky
+ *   - 세로 stack 으로 자연 흐름
  */
 const LeftRail = styled.div(({ theme }) => ({
   display: 'flex',
@@ -59,8 +70,31 @@ const LeftRail = styled.div(({ theme }) => ({
   gap: theme.spacing(3),
   paddingBottom: theme.spacing(6),
 
+  position: 'sticky',
+  top: 72,
+  alignSelf: 'start',
+  maxHeight: 'calc(100vh - 96px)',
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+  background: theme.color.bg,
+
+  // Modern thin scrollbar — Notion/Linear/GitHub 스타일. content 보일 때만 hover/scroll 로 진해짐.
+  scrollbarWidth: 'thin',
+  scrollbarColor: `${theme.color.border} transparent`,
+  '&::-webkit-scrollbar': { width: 6 },
+  '&::-webkit-scrollbar-track': { background: 'transparent' },
+  '&::-webkit-scrollbar-thumb': {
+    background: theme.color.border,
+    borderRadius: 3,
+  },
+  '&:hover::-webkit-scrollbar-thumb': { background: theme.color.borderStrong },
+
   '@media (max-width: 1024px)': {
+    position: 'static',
+    maxHeight: 'none',
+    overflowY: 'visible',
     paddingBottom: 0,
+    background: 'transparent',
   },
 }));
 
@@ -70,8 +104,6 @@ const VesselDetailHolder = styled.div(({ theme }) => ({
 
   '@media (max-width: 1024px)': {
     padding: `0 ${theme.spacing(4)}`,
-    // 모바일에선 SectionNav 가 horizontal scroll strip 으로 변하면서 화면 폭을 다 씀.
-    // detail 영역은 그 아래에 그대로 노출.
   },
 }));
 

@@ -2,7 +2,7 @@
 //
 // 입력 형식 3가지를 자동 감지:
 //   (a) ScenarioPayload JSON  ({scenarioId, label, rows: [Assignment...]})
-//                              — 이미 매핑된 풍부 도메인. src/data/*.json 와 동일.
+//                              — 이미 매핑된 풍부 도메인 (Assignment 배열).
 //   (b) CrawlerRawRow[] JSON  ([{모선항차, 선석, 모선항차, ...}, ...])
 //                              — BPTC raw 한글 헤더 배열. liveConverter 로 변환.
 //   (c) 엑셀 (.xlsx)          — SheetJS 로 sheet → row 배열 → (b) 와 동일 경로.

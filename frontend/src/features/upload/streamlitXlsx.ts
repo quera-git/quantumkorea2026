@@ -72,7 +72,7 @@ export function detectXlsxFormat(headers: string[]): FormatDetection {
  *
  * 따라서 (serial - 25569) * 86400_000 으로 UTC ms 를 만들면 KST 환경에서 9시간
  * 어긋남. base Date 를 LOCAL midnight (1899-12-30) 으로 잡고 days/fraction 을 더해야
- * Streamlit 원본의 ETB 값이 src/data/*.json 의 ISO 시각과 일치.
+ * Streamlit 원본의 ETB 값이 의도한 LOCAL 시각과 일치.
  */
 export function excelSerialToDate(serial: number): Date {
   const days = Math.floor(serial);

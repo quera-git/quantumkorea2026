@@ -39,7 +39,7 @@ const SplitTimeline = lazy(() =>
 
 import { StatusLegend } from '@/features/timeline/StatusLegend';
 
-import { SCENARIO_LIST, loadScenario } from './scenarioLoader';
+// 정적 시나리오는 제거됨 — 라이브/업로드만 source. scenarioLoader.ts 는 후방 호환용 stub.
 
 const PillRow = styled.div(({ theme }) => ({
   display: 'flex',
@@ -175,7 +175,7 @@ const ResultMeta = styled.div(({ theme }) => ({
 type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result' | 'compare';
 
 export function ScenarioPanel() {
-  const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
+  const [activeId, setActiveId] = useState<string>('');
   const [view, setView] = useState<View>('timeline');
   const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
@@ -183,8 +183,8 @@ export function ScenarioPanel() {
   const uploadedScenarios = useUploadedScenarioStore((s) => s.scenarios);
   const removeUploaded = useUploadedScenarioStore((s) => s.remove);
 
-  // 시나리오 = 정적 4개 + 라이브 1개(있을 때) + 업로드 N개.
-  // 우선순위: 업로드 > 라이브 > 정적 (id 충돌 시).
+  // 시나리오 = 라이브 1개(있을 때) + 업로드 N개. 정적 시나리오는 제거됨.
+  // 우선순위: 업로드 > 라이브 (id 충돌 시).
   const scenario = useMemo(() => {
     if (!activeId) return null;
     const uploaded = uploadedScenarios.find((s) => s.id === activeId);
@@ -206,11 +206,16 @@ export function ScenarioPanel() {
         rows: liveScenario.rows,
       };
     }
-    try {
-      return loadScenario(activeId);
-    } catch (e) {
-      console.error('scenario load failed', e);
-      return null;
+    return null;
+  }, [activeId, liveScenario, uploadedScenarios]);
+
+  // 자동 선택 — activeId 가 비어있는데 라이브 또는 업로드가 있으면 첫 번째로 선택.
+  useEffect(() => {
+    if (activeId) return;
+    if (uploadedScenarios.length > 0) {
+      setActiveId(uploadedScenarios[0]!.id);
+    } else if (liveScenario) {
+      setActiveId(liveScenario.id);
     }
   }, [activeId, liveScenario, uploadedScenarios]);
 
@@ -267,11 +272,6 @@ export function ScenarioPanel() {
         <LiveQueryPanel />
 
         <PillRow>
-          {SCENARIO_LIST.map((s) => (
-            <Pill key={s.id} active={s.id === activeId} onClick={() => setActiveId(s.id)}>
-              {s.label}
-            </Pill>
-          ))}
           {liveScenario && (
             <Pill
               active={activeId === liveScenario.id}
@@ -295,7 +295,8 @@ export function ScenarioPanel() {
                 onClick={() => {
                   if (!window.confirm(`업로드 시나리오 "${s.label}" 을 삭제할까요?`)) return;
                   removeUploaded(s.id);
-                  if (s.id === activeId) setActiveId(SCENARIO_LIST[0]?.id ?? '');
+                  // 삭제한 게 활성 시나리오면 선택 해제 → 자동 선택 effect 가 다른 후보로 이동.
+                  if (s.id === activeId) setActiveId('');
                 }}
                 aria-label={`${s.label} 시나리오 삭제`}
                 title="삭제"
@@ -395,6 +396,20 @@ export function ScenarioPanel() {
             비교
           </Tab>
         </TabRow>
+
+        {!scenario && (
+          <EmptyState
+            icon={Layers}
+            title="시나리오가 없습니다"
+            description={
+              <>
+                위의 <strong>라이브 BPTC</strong> 패널에서 실시간 데이터를 불러오거나,
+                <strong> 시나리오 업로드</strong> 버튼으로 .xlsx / .json 파일을 등록하세요.
+                형식이 궁금하면 <strong>"예시"</strong> 메뉴에서 샘플을 다운로드할 수 있습니다.
+              </>
+            }
+          />
+        )}
 
         {scenario && view === 'timeline' && (
           <Stack gap={3}>
