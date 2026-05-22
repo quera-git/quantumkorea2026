@@ -80,6 +80,22 @@ describe('convertCrawledRow', () => {
     expect(a?.yanghaVan).toBe(1200);
     expect(a?.seonjeokVan).toBe(450);
   });
+
+  it('plan_cd L/D/C → PlanStatus 매핑', () => {
+    expect(convertCrawledRow(row({ plan_cd: 'L' }), 0)?.planStatus).toBe('loading_planned');
+    expect(convertCrawledRow(row({ plan_cd: 'D' }), 0)?.planStatus).toBe('discharge_planned');
+    expect(convertCrawledRow(row({ plan_cd: 'C' }), 0)?.planStatus).toBe('crane_assigned');
+  });
+
+  it('plan_cd 모르는 값 → crane_unassigned (회색)', () => {
+    expect(convertCrawledRow(row({ plan_cd: 'X' }), 0)?.planStatus).toBe('crane_unassigned');
+  });
+
+  it('plan_cd 누락/빈문자 → null (BP 그래픽 미게재)', () => {
+    expect(convertCrawledRow(row({}), 0)?.planStatus).toBeNull();
+    expect(convertCrawledRow(row({ plan_cd: '' }), 0)?.planStatus).toBeNull();
+    expect(convertCrawledRow(row({ plan_cd: null }), 0)?.planStatus).toBeNull();
+  });
 });
 
 describe('convertCrawledRows', () => {

@@ -1,0 +1,73 @@
+{
+  "scenarios": [
+    {
+      "id": "sample-small-snd",
+      "label": "소형 · 신선대 5척 (12시간)",
+      "description": "신선대 5척, 12시간 window. 업로드 흐름 입문용.",
+      "rowCount": 5,
+      "files": [
+        {
+          "format": "payload",
+          "file": "sample-small-snd.payload.json",
+          "label": "풍부 ScenarioPayload (JSON)"
+        },
+        {
+          "format": "raw",
+          "file": "sample-small-snd.raw.json",
+          "label": "한글 헤더 raw rows (JSON)"
+        },
+        {
+          "format": "xlsx",
+          "file": "sample-small-snd.xlsx",
+          "label": "엑셀 (한글 헤더, .xlsx)"
+        }
+      ]
+    },
+    {
+      "id": "sample-mixed-snd-gam",
+      "label": "중형 · 신선대+감만 20척 (24시간)",
+      "description": "신선대 12척 + 감만 8척, 24시간. plan_status 4종 골고루.",
+      "rowCount": 20,
+      "files": [
+        {
+          "format": "payload",
+          "file": "sample-mixed-snd-gam.payload.json",
+          "label": "풍부 ScenarioPayload (JSON)"
+        },
+        {
+          "format": "raw",
+          "file": "sample-mixed-snd-gam.raw.json",
+          "label": "한글 헤더 raw rows (JSON)"
+        },
+        {
+          "format": "xlsx",
+          "file": "sample-mixed-snd-gam.xlsx",
+          "label": "엑셀 (한글 헤더, .xlsx)"
+        }
+      ]
+    },
+    {
+      "id": "sample-full-day",
+      "label": "풀데이 · 40척 (24시간 dense)",
+      "description": "신선대+감만 9선석 24시간 dense. 솔버 스트레스 테스트용.",
+      "rowCount": 40,
+      "files": [
+        {
+          "format": "payload",
+          "file": "sample-full-day.payload.json",
+          "label": "풍부 ScenarioPayload (JSON)"
+        },
+        {
+          "format": "raw",
+          "file": "sample-full-day.raw.json",
+          "label": "한글 헤더 raw rows (JSON)"
+        },
+        {
+          "format": "xlsx",
+          "file": "sample-full-day.xlsx",
+          "label": "엑셀 (한글 헤더, .xlsx)"
+        }
+      ]
+    }
+  ]
+}

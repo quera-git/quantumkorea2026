@@ -36,6 +36,7 @@ function row(over: Partial<Assignment>): Assignment {
     seonjeokVan: 20,
     shiftingVan: 0,
     workHours: 8,
+    planStatus: null,
     ...over,
   };
 }

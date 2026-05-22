@@ -1,10 +1,15 @@
 import { useTheme } from '@emotion/react';
-import { useMemo } from 'react';
-import type { Annotations, Layout, PlotData, Shape } from 'plotly.js';
+import { useMemo, useState } from 'react';
+import type { Annotations, Layout, PlotData, PlotMouseEvent, Shape } from 'plotly.js';
 
 import { Plot } from '@/shared/ui/Plot';
 import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
+import { planStatusVisual } from '@/shared/domain/statusColors';
 import type { Assignment } from '@/shared/domain/types';
+import { VesselDetailDialog } from '@/shared/ui/VesselDetailDialog';
+import { VesselHoverCard } from '@/shared/ui/VesselHoverCard';
+
+import { useColorBy, type ColorByMode } from './colorBy';
 
 interface Props {
   assignments: Assignment[];
@@ -61,11 +66,36 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
   const plotBg = isDark ? 'rgba(255,255,255,0.02)' : '#fafbfd';
   const tickColor = isDark ? theme.color.textMuted : '#475569';
+  const colorBy = useColorBy((s) => s.mode);
 
   const { traces, shapes, annotations, computedXRange } = useMemo(
-    () => buildFigure(assignments, xRange),
-    [assignments, xRange],
+    () => buildFigure(assignments, xRange, colorBy),
+    [assignments, xRange, colorBy],
   );
+
+  const assignmentByRowId = useMemo(() => {
+    const m = new Map<string, Assignment>();
+    for (const a of assignments) m.set(a.rowId, a);
+    return m;
+  }, [assignments]);
+
+  const [hover, setHover] = useState<{ rowId: string; x: number; y: number } | null>(null);
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
+
+  function rowIdFromEvent(ev: Readonly<PlotMouseEvent>): string | null {
+    const p = ev.points?.[0];
+    if (!p) return null;
+    const cd = (p as { customdata?: unknown }).customdata;
+    return typeof cd === 'string' ? cd : null;
+  }
+  function clientXYFromEvent(ev: Readonly<PlotMouseEvent>): { x: number; y: number } | null {
+    const ne = ev.event as MouseEvent | undefined;
+    if (!ne || typeof ne.clientX !== 'number' || typeof ne.clientY !== 'number') return null;
+    return { x: ne.clientX, y: ne.clientY };
+  }
+
+  const hoverAssignment = hover ? (assignmentByRowId.get(hover.rowId) ?? null) : null;
+  const detailAssignment = detailRowId ? (assignmentByRowId.get(detailRowId) ?? null) : null;
 
   const layout: Partial<Layout> = {
     height,
@@ -130,13 +160,36 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
   };
 
   return (
-    <Plot
-      data={traces}
-      layout={layout}
-      config={{ displayModeBar: false, responsive: true }}
-      style={{ width: '100%' }}
-      useResizeHandler
-    />
+    <>
+      <Plot
+        data={traces}
+        layout={layout}
+        config={{ displayModeBar: false, responsive: true }}
+        style={{ width: '100%' }}
+        useResizeHandler
+        onHover={(ev) => {
+          const rowId = rowIdFromEvent(ev);
+          const xy = clientXYFromEvent(ev);
+          if (!rowId || !xy) return;
+          setHover({ rowId, x: xy.x, y: xy.y });
+        }}
+        onUnhover={() => setHover(null)}
+        onClick={(ev) => {
+          const rowId = rowIdFromEvent(ev);
+          if (!rowId) return;
+          setHover(null);
+          setDetailRowId(rowId);
+        }}
+      />
+      {hover && hoverAssignment && (
+        <VesselHoverCard assignment={hoverAssignment} anchorX={hover.x} anchorY={hover.y} />
+      )}
+      <VesselDetailDialog
+        open={detailRowId !== null}
+        assignment={detailAssignment}
+        onClose={() => setDetailRowId(null)}
+      />
+    </>
   );
 }
 
@@ -150,6 +203,7 @@ interface FigureBuild {
 function buildFigure(
   assignments: Assignment[],
   xRangeProp: [string, string] | undefined,
+  colorBy: ColorByMode,
 ): FigureBuild {
   const traces: Partial<PlotData>[] = [];
   const shapes: Partial<Shape>[] = [];
@@ -174,11 +228,24 @@ function buildFigure(
 
     const yLo = Math.min(a.f, a.e);
     const yHi = Math.max(a.f, a.e);
-    const color = colorForVoyage(a.voyage);
     const axisSuffix = a.terminal === 'SND' ? '' : '2';
     const xAxisRef = `x${axisSuffix}` as 'x' | 'x2';
     const yAxisRef = `y${axisSuffix}` as 'y' | 'y2';
 
+    let fillColor: string;
+    let strokeColor: string;
+    if (colorBy === 'status') {
+      const v = planStatusVisual(a.planStatus);
+      fillColor = v.fill;
+      strokeColor = v.stroke;
+    } else {
+      const voyageColor = colorForVoyage(a.voyage);
+      fillColor = rgbaWithAlpha(voyageColor, 0.55);
+      strokeColor = voyageColor;
+    }
+
+    // 우리 호버 카드/다이얼로그로 라우팅 — Plotly 기본 hovertext 는 끈다 (hoverinfo='none').
+    // event.points[0].customdata 로 rowId 식별. 점마다 동일 rowId 5개 (사각형 꼭짓점) 채움.
     traces.push({
       type: 'scatter',
       mode: 'lines',
@@ -187,15 +254,10 @@ function buildFigure(
       xaxis: xAxisRef,
       yaxis: yAxisRef,
       fill: 'toself',
-      fillcolor: rgbaWithAlpha(color, 0.55),
-      line: { color, width: 1.2 },
-      hoverinfo: 'text',
-      hovertext:
-        `${a.voyage} · ${a.vessel ?? ''}` +
-        `<br>terminal=${a.terminal} berth=${a.berth} (${a.company ?? ''})` +
-        `<br>start=${start.replace('T', ' ').slice(0, 16)}` +
-        `<br>end=${end.replace('T', ' ').slice(0, 16)}` +
-        `<br>f=${a.f}m e=${a.e}m length=${a.length ?? '-'}m`,
+      fillcolor: fillColor,
+      line: { color: strokeColor, width: 1.2 },
+      hoverinfo: 'none',
+      customdata: [a.rowId, a.rowId, a.rowId, a.rowId, a.rowId] as unknown as PlotData['customdata'],
       showlegend: false,
     });
 

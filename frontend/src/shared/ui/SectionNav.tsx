@@ -18,22 +18,18 @@ interface Props {
 }
 
 const Wrap = styled.aside(({ theme }) => ({
-  position: 'sticky',
-  top: 72, // AppBar 높이 56 + 약간의 여백
-  alignSelf: 'start',
+  // 데스크탑: sticky / overflow 책임은 부모 LeftRail (Dashboard.tsx) 가 가짐.
+  // 여기선 width + padding 만. 부모 scroll context 안에서 자연 흐름.
   width: 224,
-  maxHeight: 'calc(100vh - 96px)',
-  overflowY: 'auto',
   padding: theme.spacing(3),
   paddingRight: theme.spacing(2),
   fontSize: theme.font.size.sm,
 
   '@media (max-width: 1024px)': {
+    // 모바일은 horizontal strip — 자체 sticky 유지.
     position: 'sticky',
     top: 56,
     width: 'auto',
-    maxHeight: 'none',
-    overflowY: 'visible',
     overflowX: 'auto',
     background: `${theme.color.surface}f5`,
     backdropFilter: 'saturate(180%) blur(8px)',

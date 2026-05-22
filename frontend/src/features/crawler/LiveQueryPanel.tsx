@@ -1,5 +1,5 @@
 import styled from '@emotion/styled';
-import { Database, Loader2, RefreshCw, Satellite } from 'lucide-react';
+import { CalendarRange, Database, Loader2, RefreshCw, Satellite } from 'lucide-react';
 import { useState } from 'react';
 
 import { extractErrorMessage } from '@/shared/api/client';
@@ -23,15 +23,18 @@ const TermRow = styled.div(({ theme }) => ({
   alignItems: 'center',
   gap: theme.spacing(2),
   padding: `${theme.spacing(2)} ${theme.spacing(3)}`,
-  background: theme.color.warningSoft,
-  border: `1px solid ${theme.color.warning}33`,
+  background: theme.color.primarySoft,
+  border: `1px solid ${theme.color.primary}33`,
   borderRadius: theme.radius.md,
   flexWrap: 'wrap',
 
   '& .label': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: theme.spacing(1),
     fontSize: theme.font.size.xs,
     fontWeight: theme.font.weight.semibold,
-    color: theme.color.warning,
+    color: theme.color.primary,
     textTransform: 'uppercase',
     letterSpacing: theme.font.letter.wide,
   },
@@ -44,7 +47,7 @@ const TermRow = styled.div(({ theme }) => ({
     color: theme.color.danger,
     fontWeight: theme.font.weight.medium,
   },
-  '& .note': {
+  '& .hint': {
     fontSize: theme.font.size.xs,
     color: theme.color.textMuted,
     marginLeft: 'auto',
@@ -152,21 +155,15 @@ const ROUTE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const TERMINAL_OPTIONS: { value: TerminalFilter; label: string }[] = [
+  { value: 'ALL', label: '전체 (신선대+감만)' },
   { value: 'SND', label: '신선대 SND' },
   { value: 'GAM', label: '감만 GAM' },
 ];
 
-/** "YYYY-MM-DD" → {year, month, day} 분해. 실패 시 undefined. */
-function splitDate(s: string): { year: number; month: number; day: number } | undefined {
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
-  if (!m) return undefined;
-  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
-}
-
 export function LiveQueryPanel() {
   const [time, setTime] = useState<string>('3days');
   const [route, setRoute] = useState<string>('ALL');
-  const [terminal, setTerminal] = useState<TerminalFilter>('SND');
+  const [terminal, setTerminal] = useState<TerminalFilter>('ALL');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [confirmKind, setConfirmKind] = useState<'preview' | 'refresh' | null>(null);
@@ -182,20 +179,10 @@ export function LiveQueryPanel() {
   const isTerm = time === 'term';
   const termReady = isTerm ? Boolean(dateFrom && dateTo && dateFrom <= dateTo) : true;
 
-  /** crawler API 에 넘길 term date params (term 일 때만). */
-  function buildTermDates() {
-    if (!isTerm) return {};
-    const f = splitDate(dateFrom);
-    const t = splitDate(dateTo);
-    if (!f || !t) return {};
-    return {
-      year1: f.year,
-      month1: f.month,
-      day1: f.day,
-      year2: t.year,
-      month2: t.month,
-      day2: t.day,
-    };
+  /** crawler API 에 넘길 term date params (term 일 때만). backend 는 ISO YYYY-MM-DD 기대. */
+  function buildTermDates(): { startDate?: string; endDate?: string } {
+    if (!isTerm || !dateFrom || !dateTo) return {};
+    return { startDate: dateFrom, endDate: dateTo };
   }
 
   function requestPreview() {
@@ -212,13 +199,13 @@ export function LiveQueryPanel() {
         { time, route, berth: backendBerth, skipVsfinder: true, limit: 500, ...termDates },
         {
           onSuccess: (slice) => {
-            // term + 0건이면 백엔드 미지원 가능성 → 명시적 안내.
-            if (isTerm && slice.rows.length === 0) {
+            if (slice.rows.length === 0) {
               toast.notify({
                 tone: 'warning',
-                title: '결과 0건 — 직접설정 모드 백엔드 미지원',
-                description:
-                  '백엔드가 아직 year/month/day 를 BPTC 로 forward 하지 않습니다. backend 확장 후 자동 동작.',
+                title: '결과 0건',
+                description: isTerm
+                  ? `선택 기간(${dateFrom} ~ ${dateTo})에 BPTC 게시 데이터가 없습니다.`
+                  : '해당 기간/항로/터미널 조합에 BPTC 게시 데이터가 없습니다.',
               });
             } else {
               toast.notify({
@@ -241,11 +228,13 @@ export function LiveQueryPanel() {
         { time, route, berth: backendBerth, replace: true, ...termDates },
         {
           onSuccess: (r) => {
-            if (isTerm && r.crawled === 0) {
+            if (r.crawled === 0) {
               toast.notify({
                 tone: 'warning',
-                title: 'BPT refresh 결과 0건 — 직접설정 모드 백엔드 미지원',
-                description: 'year/month/day forward 미구현 → BPTC term 모드가 빈 응답.',
+                title: 'BPT refresh 결과 0건',
+                description: isTerm
+                  ? `선택 기간(${dateFrom} ~ ${dateTo})에 BPTC 게시 데이터가 없습니다.`
+                  : '해당 기간/항로/터미널 조합에 BPTC 게시 데이터가 없습니다.',
               });
             } else {
               toast.notify({
@@ -365,7 +354,10 @@ export function LiveQueryPanel() {
 
     {isTerm && (
       <TermRow role="group" aria-label="직접 설정 기간 입력">
-        <span className="label">조회 기간 직접 설정</span>
+        <span className="label">
+          <CalendarRange size={12} aria-hidden="true" />
+          조회 기간
+        </span>
         <DateInput
           type="date"
           value={dateFrom}
@@ -385,9 +377,7 @@ export function LiveQueryPanel() {
         {dateFrom && dateTo && dateFrom > dateTo && (
           <span className="warn">시작 ≤ 종료 가 되어야 합니다</span>
         )}
-        <span className="note">
-          ⚠ backend 가 year/month/day 를 BPTC 로 forward 하지 않아 결과 0건일 수 있음 (backend 확장 후 정상)
-        </span>
+        <span className="hint">BPTC 사이트와 동일한 직접입력 모드</span>
       </TermRow>
     )}
 

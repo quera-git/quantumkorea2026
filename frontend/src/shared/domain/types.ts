@@ -10,6 +10,23 @@ import { z } from 'zod';
 export const TerminalEnum = z.enum(['SND', 'GAM']);
 
 /**
+ * BPTC 선석배정 그래픽(G) 페이지의 박스 색깔로 표시되는 작업 진행 상태.
+ * 원본 사이트 VslMsg() 의 plan_cd 8번째 인자 매핑:
+ *   L → loading_planned       (적하 프래닝까지 완료)  분홍
+ *   D → discharge_planned     (양하 프래닝까지 완료)  청록
+ *   C → crane_assigned        (크래인 배정 완료)      베이지
+ *   그 외 → crane_unassigned  (크래인 미배정)          회색
+ *   null → BP 그래픽 미게재
+ */
+export const PlanStatusEnum = z.enum([
+  'loading_planned',
+  'discharge_planned',
+  'crane_assigned',
+  'crane_unassigned',
+]);
+export type PlanStatus = z.infer<typeof PlanStatusEnum>;
+
+/**
  * 한 척의 선박 배정 한 행.
  * - 시간(start/end/eta): ISO datetime 문자열 (xlsx Timestamp 의 직렬화).
  * - 위치(f/e): 선체 앞단(F)/뒷단(E) 의 m 좌표.
@@ -43,6 +60,9 @@ export const AssignmentSchema = z.object({
   seonjeokVan: z.number().nullable().default(0),
   shiftingVan: z.number().nullable().default(0),
   workHours: z.number().nullable().default(null),
+
+  /** BPTC 선석배정 그래픽 색깔 → 작업 진행 단계. null = 미게재 / 정적 시나리오. */
+  planStatus: PlanStatusEnum.nullable().default(null),
 });
 export type Assignment = z.infer<typeof AssignmentSchema>;
 

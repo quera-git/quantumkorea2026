@@ -4,6 +4,7 @@ import { Database, Layers } from 'lucide-react';
 import { useState } from 'react';
 
 import { BptPanel } from '@/features/bpt/BptPanel';
+import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { JobProgressCard } from '@/features/jobs/JobProgressCard';
 import { JobsListPanel } from '@/features/jobs/JobsListPanel';
 import { SolverPanel } from '@/features/jobs/SolverPanel';
@@ -21,8 +22,9 @@ const Page = styled.div(({ theme }) => ({
 }));
 
 const Layout = styled.div(({ theme }) => ({
-  maxWidth: 1440,
-  margin: '0 auto',
+  // 좌측 pin — center 가 아니라 화면 왼쪽 끝에 sidebar 부착, main 은 viewport 끝까지 확장.
+  // gantt/timeline 이 가로로 길어 wide-screen 일수록 이득.
+  width: '100%',
   display: 'grid',
   gridTemplateColumns: '224px minmax(0, 1fr)',
   alignItems: 'start',
@@ -34,10 +36,74 @@ const Layout = styled.div(({ theme }) => ({
   '& > *': { minWidth: 0 },
   '& > main': {
     padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+    // 아주 큰 모니터 (≥1920px) 에서 줄이 너무 길어지지 않게 본문 텍스트만 maxWidth.
+    // gantt 차트는 자체 width:100% 라 풀폭 유지.
 
     '@media (max-width: 1024px)': {
       padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
     },
+    '@media (max-width: 640px)': {
+      padding: `${theme.spacing(4)} ${theme.spacing(2)}`,
+    },
+  },
+}));
+
+/**
+ * 좌측 사이드바 — Notion/Linear 패턴: 사이드바 전체가 한 단위로 sticky 하고
+ * 내부에서만 scroll 됨. 메인 컬럼과 독립적인 scroll context 라 sticky overlap /
+ * 본문이 사이드바 뒤로 비치는 문제가 발생하지 않음.
+ *
+ * 데스크탑:
+ *   - position: sticky (top: 72) — AppBar 아래 위치
+ *   - max-height: calc(100vh - 96px) — viewport 안에 갇힘
+ *   - overflow-y: auto — SectionNav + SelectedVesselPanel 합쳐서 길어지면 내부 scroll
+ *   - overscroll-behavior: contain — 사이드바 scroll 이 페이지 scroll 로 새지 않음
+ *   - 스크롤바는 항상 미세하게 노출 (modern thin scrollbar) — content 가 잘려있다는 visual hint
+ *
+ * 모바일 (≤1024px):
+ *   - sticky 해제 — SectionNav 자체가 horizontal strip 으로 자체 sticky
+ *   - 세로 stack 으로 자연 흐름
+ */
+const LeftRail = styled.div(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(3),
+  paddingBottom: theme.spacing(6),
+
+  position: 'sticky',
+  top: 72,
+  alignSelf: 'start',
+  maxHeight: 'calc(100vh - 96px)',
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
+  background: theme.color.bg,
+
+  // Modern thin scrollbar — Notion/Linear/GitHub 스타일. content 보일 때만 hover/scroll 로 진해짐.
+  scrollbarWidth: 'thin',
+  scrollbarColor: `${theme.color.border} transparent`,
+  '&::-webkit-scrollbar': { width: 6 },
+  '&::-webkit-scrollbar-track': { background: 'transparent' },
+  '&::-webkit-scrollbar-thumb': {
+    background: theme.color.border,
+    borderRadius: 3,
+  },
+  '&:hover::-webkit-scrollbar-thumb': { background: theme.color.borderStrong },
+
+  '@media (max-width: 1024px)': {
+    position: 'static',
+    maxHeight: 'none',
+    overflowY: 'visible',
+    paddingBottom: 0,
+    background: 'transparent',
+  },
+}));
+
+/** SectionNav 아래에 자리잡는 vessel detail 영역 — 좁은 사이드에 맞춰 padding 만 적용. */
+const VesselDetailHolder = styled.div(({ theme }) => ({
+  padding: `0 ${theme.spacing(3)}`,
+
+  '@media (max-width: 1024px)': {
+    padding: `0 ${theme.spacing(4)}`,
   },
 }));
 
@@ -132,7 +198,12 @@ export default function Dashboard() {
       <AppBar />
       <ShortcutModal />
       <Layout>
-        <SectionNav groups={NAV_GROUPS} />
+        <LeftRail>
+          <SectionNav groups={NAV_GROUPS} />
+          <VesselDetailHolder>
+            <SelectedVesselPanel />
+          </VesselDetailHolder>
+        </LeftRail>
 
         <main id="main-content" tabIndex={-1}>
           <Stack gap={8}>

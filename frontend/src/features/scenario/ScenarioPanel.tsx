@@ -17,9 +17,10 @@ import { useLiveScenarioStore } from '@/features/crawler/liveScenarioStore';
 import { EditorActionsBar } from '@/features/editor/EditorActionsBar';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
-import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
+import { UploadButton } from '@/features/upload/UploadButton';
+import { useUploadedScenarioStore } from '@/features/upload/uploadedScenarioStore';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
@@ -36,12 +37,15 @@ const SplitTimeline = lazy(() =>
   import('@/features/timeline/SplitTimeline').then((m) => ({ default: m.SplitTimeline })),
 );
 
-import { SCENARIO_LIST, loadScenario } from './scenarioLoader';
+import { StatusLegend } from '@/features/timeline/StatusLegend';
+
+// 정적 시나리오는 제거됨 — 라이브/업로드만 source. scenarioLoader.ts 는 후방 호환용 stub.
 
 const PillRow = styled.div(({ theme }) => ({
   display: 'flex',
   flexWrap: 'wrap',
   gap: theme.spacing(2),
+  alignItems: 'center',
 }));
 
 const Pill = styled('button', {
@@ -57,6 +61,30 @@ const Pill = styled('button', {
   cursor: 'pointer',
   transition: `background ${theme.motion.duration.fast} ${theme.motion.easing.standard}, color ${theme.motion.duration.fast} ${theme.motion.easing.standard}`,
   '&:hover': { background: active ? theme.color.primarySoft : theme.color.surfaceAlt },
+  '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
+}));
+
+// 업로드 시나리오 pill — 본체 + 삭제 X 버튼이 inline 으로 붙는 grouped pill.
+const UploadedPillGroup = styled.div(({ theme }) => ({
+  display: 'inline-flex',
+  alignItems: 'stretch',
+  borderRadius: theme.radius.pill,
+  overflow: 'hidden',
+  border: `1px solid ${theme.color.border}`,
+
+  '& > button + button': { borderLeft: `1px solid ${theme.color.border}` },
+  '& > button': { border: 'none', borderRadius: 0 },
+}));
+
+const RemoveButton = styled.button(({ theme }) => ({
+  padding: '6px 8px',
+  background: theme.color.surface,
+  color: theme.color.textMuted,
+  cursor: 'pointer',
+  fontSize: theme.font.size.sm,
+  fontFamily: theme.font.mono,
+  lineHeight: 1,
+  '&:hover': { background: theme.color.dangerSoft, color: theme.color.danger },
   '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
 }));
 
@@ -97,14 +125,9 @@ const Tab = styled('button', {
   '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
 }));
 
-const EditorGrid = styled.div(({ theme }) => ({
-  display: 'grid',
-  gridTemplateColumns: '1fr 320px',
-  gap: theme.spacing(3),
-  alignItems: 'start',
-  '@media (max-width: 1024px)': {
-    gridTemplateColumns: '1fr',
-  },
+// 단일 컬럼 — vessel detail panel 은 Dashboard 좌측 LeftRail 로 이동.
+const EditorGrid = styled.div(() => ({
+  display: 'block',
 }));
 
 const ResultDot = styled.span(({ theme }) => ({
@@ -152,16 +175,28 @@ const ResultMeta = styled.div(({ theme }) => ({
 type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result' | 'compare';
 
 export function ScenarioPanel() {
-  const [activeId, setActiveId] = useState<string>(SCENARIO_LIST[0]?.id ?? '');
+  const [activeId, setActiveId] = useState<string>('');
   const [view, setView] = useState<View>('timeline');
   const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
   const liveScenario = useLiveScenarioStore((s) => s.current);
+  const uploadedScenarios = useUploadedScenarioStore((s) => s.scenarios);
+  const removeUploaded = useUploadedScenarioStore((s) => s.remove);
 
-  // 시나리오 = 정적 4개 + 라이브 1개(있을 때).
-  // 라이브가 있고 activeId 가 그것을 가리키면 메모리 시나리오 사용, 아니면 정적 loader.
+  // 시나리오 = 라이브 1개(있을 때) + 업로드 N개. 정적 시나리오는 제거됨.
+  // 우선순위: 업로드 > 라이브 (id 충돌 시).
   const scenario = useMemo(() => {
     if (!activeId) return null;
+    const uploaded = uploadedScenarios.find((s) => s.id === activeId);
+    if (uploaded) {
+      return {
+        scenarioId: uploaded.id,
+        label: uploaded.label,
+        sourceFile: uploaded.sourceFile,
+        rowCount: uploaded.rows.length,
+        rows: uploaded.rows,
+      };
+    }
     if (liveScenario && activeId === liveScenario.id) {
       return {
         scenarioId: liveScenario.id,
@@ -171,13 +206,18 @@ export function ScenarioPanel() {
         rows: liveScenario.rows,
       };
     }
-    try {
-      return loadScenario(activeId);
-    } catch (e) {
-      console.error('scenario load failed', e);
-      return null;
+    return null;
+  }, [activeId, liveScenario, uploadedScenarios]);
+
+  // 자동 선택 — activeId 가 비어있는데 라이브 또는 업로드가 있으면 첫 번째로 선택.
+  useEffect(() => {
+    if (activeId) return;
+    if (uploadedScenarios.length > 0) {
+      setActiveId(uploadedScenarios[0]!.id);
+    } else if (liveScenario) {
+      setActiveId(liveScenario.id);
     }
-  }, [activeId, liveScenario]);
+  }, [activeId, liveScenario, uploadedScenarios]);
 
   const stats = useMemo(() => {
     if (!scenario) return null;
@@ -232,11 +272,6 @@ export function ScenarioPanel() {
         <LiveQueryPanel />
 
         <PillRow>
-          {SCENARIO_LIST.map((s) => (
-            <Pill key={s.id} active={s.id === activeId} onClick={() => setActiveId(s.id)}>
-              {s.label}
-            </Pill>
-          ))}
           {liveScenario && (
             <Pill
               active={activeId === liveScenario.id}
@@ -247,6 +282,30 @@ export function ScenarioPanel() {
               🔴 {liveScenario.label}
             </Pill>
           )}
+          {uploadedScenarios.map((s) => (
+            <UploadedPillGroup key={s.id}>
+              <Pill
+                active={s.id === activeId}
+                onClick={() => setActiveId(s.id)}
+                title={`${s.sourceFile} · ${s.rows.length}척 · ${s.format}`}
+              >
+                📎 {s.label}
+              </Pill>
+              <RemoveButton
+                onClick={() => {
+                  if (!window.confirm(`업로드 시나리오 "${s.label}" 을 삭제할까요?`)) return;
+                  removeUploaded(s.id);
+                  // 삭제한 게 활성 시나리오면 선택 해제 → 자동 선택 effect 가 다른 후보로 이동.
+                  if (s.id === activeId) setActiveId('');
+                }}
+                aria-label={`${s.label} 시나리오 삭제`}
+                title="삭제"
+              >
+                ×
+              </RemoveButton>
+            </UploadedPillGroup>
+          ))}
+          <UploadButton onAdded={(id) => setActiveId(id)} />
         </PillRow>
 
         {stats && (
@@ -338,18 +397,35 @@ export function ScenarioPanel() {
           </Tab>
         </TabRow>
 
+        {!scenario && (
+          <EmptyState
+            icon={Layers}
+            title="시나리오가 없습니다"
+            description={
+              <>
+                위의 <strong>라이브 BPTC</strong> 패널에서 실시간 데이터를 불러오거나,
+                <strong> 시나리오 업로드</strong> 버튼으로 .xlsx / .json 파일을 등록하세요.
+                형식이 궁금하면 <strong>"예시"</strong> 메뉴에서 샘플을 다운로드할 수 있습니다.
+              </>
+            }
+          />
+        )}
+
         {scenario && view === 'timeline' && (
-          <Suspense fallback={<Skeleton height={680} radius="md" />}>
-            <SplitTimeline assignments={displayRows} />
-          </Suspense>
+          <Stack gap={3}>
+            <StatusLegend rows={displayRows} />
+            <Suspense fallback={<Skeleton height={680} radius="md" />}>
+              <SplitTimeline assignments={displayRows} />
+            </Suspense>
+          </Stack>
         )}
 
         {scenario && view === 'editor' && (
           <Stack gap={3}>
             <EditorActionsBar />
+            <StatusLegend rows={editorRows} />
             <EditorGrid>
               <EditorCanvas assignments={editorRows} />
-              <SelectedVesselPanel />
             </EditorGrid>
           </Stack>
         )}

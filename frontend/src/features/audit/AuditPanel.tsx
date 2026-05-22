@@ -1,6 +1,6 @@
 import styled from '@emotion/styled';
 import { Download, GitCommitHorizontal, Sparkles } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useEditorStore } from '@/features/editor/editor.store';
 import type { Assignment } from '@/shared/domain/types';
@@ -8,6 +8,8 @@ import { Button } from '@/shared/ui/Button';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { Stack } from '@/shared/ui/Stack';
 import { useToast } from '@/shared/ui/Toast';
+import { VesselDetailDialog } from '@/shared/ui/VesselDetailDialog';
+import { VesselHoverCard } from '@/shared/ui/VesselHoverCard';
 
 import {
   diffRows,
@@ -185,6 +187,20 @@ export function AuditPanel({
   const diffs: RowDiff[] = useMemo(() => diffRows(original, current), [original, current]);
   const summary = useMemo(() => summarize(diffs), [diffs]);
 
+  // 행 hover/click 시 표시할 Assignment 를 빠르게 찾기 위한 rowId → Assignment 맵.
+  // current 우선(after), 없으면 original(before) fallback.
+  const assignmentByRowId = useMemo(() => {
+    const m = new Map<string, Assignment>();
+    for (const a of original) m.set(a.rowId, a);
+    for (const a of current) m.set(a.rowId, a); // current 가 덮어씀
+    return m;
+  }, [original, current]);
+
+  const [hover, setHover] = useState<{ rowId: string; x: number; y: number } | null>(null);
+  const [detailRowId, setDetailRowId] = useState<string | null>(null);
+  const hoverAssignment = hover ? (assignmentByRowId.get(hover.rowId) ?? null) : null;
+  const detailAssignment = detailRowId ? (assignmentByRowId.get(detailRowId) ?? null) : null;
+
   function handleExport() {
     if (diffs.length === 0) {
       toast.notify({ tone: 'info', title: '내보낼 변경 사항이 없습니다' });
@@ -276,19 +292,60 @@ export function AuditPanel({
           </thead>
           <tbody>
             {diffs.map((d) => (
-              <RowGroup key={d.rowId} diff={d} />
+              <RowGroup
+                key={d.rowId}
+                diff={d}
+                onHoverStart={(x, y) => setHover({ rowId: d.rowId, x, y })}
+                onHoverMove={(x, y) =>
+                  setHover((prev) =>
+                    prev?.rowId === d.rowId ? { ...prev, x, y } : prev,
+                  )
+                }
+                onHoverEnd={() =>
+                  setHover((prev) => (prev?.rowId === d.rowId ? null : prev))
+                }
+                onSelect={() => setDetailRowId(d.rowId)}
+              />
             ))}
           </tbody>
         </Table>
       )}
+
+      {hover && hoverAssignment && (
+        <VesselHoverCard
+          assignment={hoverAssignment}
+          anchorX={hover.x}
+          anchorY={hover.y}
+        />
+      )}
+      <VesselDetailDialog
+        open={detailRowId !== null}
+        assignment={detailAssignment}
+        onClose={() => setDetailRowId(null)}
+      />
     </Wrap>
   );
 }
 
-function RowGroup({ diff }: { diff: RowDiff }) {
+interface RowGroupProps {
+  diff: RowDiff;
+  onHoverStart: (x: number, y: number) => void;
+  onHoverMove: (x: number, y: number) => void;
+  onHoverEnd: () => void;
+  onSelect: () => void;
+}
+
+function RowGroup({ diff, onHoverStart, onHoverMove, onHoverEnd, onSelect }: RowGroupProps) {
   return (
     <>
-      <tr className="row-head">
+      <tr
+        className="row-head"
+        onPointerEnter={(e) => onHoverStart(e.clientX, e.clientY)}
+        onPointerMove={(e) => onHoverMove(e.clientX, e.clientY)}
+        onPointerLeave={onHoverEnd}
+        onClick={onSelect}
+        style={{ cursor: 'pointer' }}
+      >
         <td>
           <strong>{diff.voyage}</strong>{' '}
           <span style={{ color: '#868e9c', fontSize: 12 }}>

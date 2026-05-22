@@ -11,6 +11,8 @@ export function useJobsList() {
   return useQuery({
     queryKey: queryKeys.jobs.list,
     queryFn: listJobs,
+    // 제출/완료 시 invalidate. 5s 안에 빈번한 마운트(탭 전환 등) 는 캐시.
+    staleTime: 5_000,
   });
 }
 
@@ -20,6 +22,8 @@ export function useJobResult(jobId: string | null | undefined) {
     queryKey: jobId ? queryKeys.jobs.result(jobId) : ['jobs', 'result', 'none'],
     queryFn: () => getJobResult(jobId as string),
     enabled: Boolean(jobId),
+    // 완료된 job 결과는 변하지 않음 — 폴링 hook 과 별개로 짧게 캐시 (탭 전환 깜빡임 방지).
+    staleTime: 4_000,
   });
 }
 
