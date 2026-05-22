@@ -20,7 +20,7 @@ export interface UploadedScenarioSlice {
   /** 업로드 시각 (ISO). 최신순 정렬 / 자동 제거 기준. */
   uploadedAt: string;
   /** 입력 포맷 — 디버그/통계용. */
-  format: 'scenario-payload' | 'raw-rows' | 'xlsx';
+  format: 'scenario-payload' | 'raw-rows' | 'bpt-raw-xlsx' | 'streamlit-xlsx';
   /** 변환 중 누락된 행 수 (raw-rows / xlsx 인 경우 의미 있음). */
   droppedInConversion: number;
 }

@@ -177,7 +177,8 @@ const ErrorBlock = styled.div(({ theme }) => ({
   lineHeight: theme.font.lineHeight.normal,
 
   '& svg': { flexShrink: 0, marginTop: 2 },
-  '& .msg': { color: theme.color.text, wordBreak: 'break-word' },
+  // pre-line — \n 줄바꿈을 살림 (헤더 인식 실패 메시지가 multi-line).
+  '& .msg': { color: theme.color.text, wordBreak: 'break-word', whiteSpace: 'pre-line' },
 }));
 
 const Footer = styled.div(({ theme }) => ({
@@ -196,12 +197,34 @@ interface Props {
   onAdded?: (scenarioId: string) => void;
 }
 
+/**
+ * 미리보기 라벨용 통합 포맷 식별자.
+ *   scenario-payload  — 풍부 JSON
+ *   raw-rows          — 한글 raw JSON
+ *   bpt-raw-xlsx      — BPTC raw 한글 헤더 xlsx
+ *   streamlit-xlsx    — Streamlit 원본 xlsx (자동 변환됨)
+ */
+type DisplayFormat = DetectedFormat | 'bpt-raw-xlsx' | 'streamlit-xlsx';
+
 interface ParsedState {
   payload: ScenarioPayload;
   droppedCount: number;
-  format: DetectedFormat | 'xlsx';
+  format: DisplayFormat;
   stats: ReturnType<typeof summarizePayload>;
   issueCount: number;
+}
+
+function formatLabel(f: DisplayFormat): string {
+  switch (f) {
+    case 'scenario-payload':
+      return '풍부 ScenarioPayload (JSON)';
+    case 'raw-rows':
+      return '한글 raw rows (JSON)';
+    case 'bpt-raw-xlsx':
+      return 'BPTC raw 한글 헤더 (xlsx)';
+    case 'streamlit-xlsx':
+      return 'Streamlit 원본 xlsx → BPT 형식 자동 변환';
+  }
 }
 
 export function UploadDialog({ file, onClose, onAdded }: Props) {
@@ -244,7 +267,8 @@ export function UploadDialog({ file, onClose, onAdded }: Props) {
           const r = await parseXlsxInput(buf, tempMeta);
           payload = r.payload;
           droppedCount = r.droppedCount;
-          format = 'xlsx';
+          // parseXlsxInput 가 감지한 xlsx 하위 형식 (bpt-raw vs streamlit-xlsx).
+          format = r.xlsxFormat === 'streamlit-xlsx' ? 'streamlit-xlsx' : 'bpt-raw-xlsx';
         } else {
           const text = await file.text();
           const r = parseJsonInput(text, tempMeta);
@@ -383,7 +407,7 @@ export function UploadDialog({ file, onClose, onAdded }: Props) {
                 </div>
               </Stats>
               <Note>
-                포맷: <strong>{parsed.format}</strong>
+                포맷: <strong>{formatLabel(parsed.format)}</strong>
                 {parsed.droppedCount > 0 && (
                   <>
                     {' '}

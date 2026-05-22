@@ -22,6 +22,8 @@ import {
   type ScenarioPayload,
 } from '@/shared/domain/types';
 
+import { detectXlsxFormat, streamlitRowsToBptRaw, type XlsxFormat } from './streamlitXlsx';
+
 export type DetectedFormat = 'scenario-payload' | 'raw-rows';
 
 /** 업로드 가능한 최대 파일 크기 (10MB). */
@@ -142,11 +144,16 @@ export function parseJsonInput(
  *
  * SheetJS(`xlsx`) 는 dependency 로 포함되며 vite 가 별 chunk 로 lazy 분리한다 —
  * 이 함수가 처음 호출될 때만 ~700KB 청크가 fetch 된다 (main bundle 영향 X).
+ *
+ * 헤더 set 자동 감지 (detectXlsxFormat):
+ *   - bpt-raw       (구분/입항일시/...)  → 그대로
+ *   - streamlit-xlsx (ETB/접안위치(F)/...) → streamlitRowsToBptRaw 로 정규화
+ *   - unknown       → throw (사용자에게 두 형식 가이드)
  */
 export async function parseXlsxInput(
   buffer: ArrayBuffer,
   meta: { id: string; label: string; sourceFile: string },
-): Promise<{ payload: ScenarioPayload; droppedCount: number }> {
+): Promise<{ payload: ScenarioPayload; droppedCount: number; xlsxFormat: XlsxFormat }> {
   // 동적 import — vite 가 별 chunk 로 분리. parse 시점에 처음 다운로드.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let XLSX: any;
@@ -162,7 +169,11 @@ export async function parseXlsxInput(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let workbook: any;
   try {
-    workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    // cellDates: false — date 형식 cell 도 raw Excel serial number 로 유지.
+    // SheetJS 의 cellDates:true 가 1900 leap-bug 처리에서 약 -52초 drift 를 만들어
+    // 분 round 로도 보정 불가. raw serial → excelSerialToDate (분 단위 round) 가
+    // 정확. BPTC raw 의 입항일시 컬럼은 string cell 이라 cellDates 옵션과 무관.
+    workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
   } catch (e) {
     throw new UploadParseError(`엑셀 파싱 실패: ${(e as Error).message}`, e);
   }
@@ -181,15 +192,42 @@ export async function parseXlsxInput(
   // raw=true — date 셀(read 시 cellDates:true 로 Date 객체)을 그대로 유지해야
   //   아래 Date→KR 정규화 분기가 동작. raw=false 면 SSF 가 미리 포맷팅해서
   //   parseKrDate 패턴을 깨버림.
-  const raw: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
+  const sheetRows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
     defval: '',
     raw: true,
   });
 
-  // Date 객체 → ISO string (sheet_to_json 이 cellDates 면 Date 반환).
+  // 헤더 감지 — mutually exclusive 마커 (입항일시/작업완료일시 vs ETB/접안위치(F)).
+  const headers = sheetRows.length > 0 ? Object.keys(sheetRows[0] ?? {}) : [];
+  const detection = detectXlsxFormat(headers);
+  if (detection.format === 'unknown') {
+    throw new UploadParseError(
+      [
+        `엑셀 헤더를 인식할 수 없습니다 — ${detection.reason}`,
+        '',
+        '지원 형식:',
+        '  A) BPTC raw 한글 헤더 — 구분 / 입항일시 / 작업완료일시 / f / e / 모선항차',
+        '  B) Streamlit 원본 — 구분 / ETB / ETD / 접안위치(F) / 접안위치(E) / 모선항차',
+        '',
+        detection.observedHeaders
+          ? `발견된 컬럼: ${detection.observedHeaders.slice(0, 20).join(', ')}` +
+            (detection.observedHeaders.length > 20 ? ` … (+${detection.observedHeaders.length - 20})` : '')
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+
+  // Streamlit 형식이면 컬럼 rename + Excel serial → KR 라벨 변환을 거쳐 BPTC raw 로 정규화.
+  // bpt-raw 면 그대로 다음 단계로.
+  const bptRawRows: Record<string, unknown>[] =
+    detection.format === 'streamlit-xlsx' ? streamlitRowsToBptRaw(sheetRows) : sheetRows;
+
+  // Date 객체 → "YYYY/MM/DD HH:mm" 정규화 (BPTC raw path 의 cellDates Date 객체용).
   // SheetJS 의 Date ↔ Excel serial 변환은 ms 단위 drift 가 있어 "HH:30" 이 "HH:29:59"
   // 로 들어오기도 함 — 분 단위로 round 후 KR 라벨 만들어 parseKrDate 가 정확히 매칭되게.
-  const normalized = raw.map((row) => {
+  const normalized = bptRawRows.map((row) => {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
       if (v instanceof Date) {
@@ -222,7 +260,7 @@ export async function parseXlsxInput(
       '엑셀 변환 결과 0행 — `모선항차` 컬럼이 없거나 비어 있습니다. 헤더를 확인하세요.',
     );
   }
-  return { payload, droppedCount };
+  return { payload, droppedCount, xlsxFormat: detection.format };
 }
 
 /** 파일명에서 확장자 제거 → 기본 시나리오 이름. */

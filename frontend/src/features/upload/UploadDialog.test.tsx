@@ -116,7 +116,8 @@ describe('UploadDialog', () => {
     await waitFor(() => {
       expect(screen.getByRole('region', { name: '시나리오 통계' })).toBeInTheDocument();
     });
-    expect(screen.getByText(/scenario-payload/)).toBeInTheDocument();
+    // 미리보기 라벨 — 풍부 ScenarioPayload 라벨 노출.
+    expect(screen.getByText(/ScenarioPayload/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: '추가' }));
     expect(useUploadedScenarioStore.getState().scenarios).toHaveLength(1);
   });
@@ -205,7 +206,7 @@ describe('UploadDialog', () => {
     expect(gam?.planStatus).toBe('crane_assigned');
   });
 
-  it('xlsx 헤더에 모선항차 없음 → 에러 alert + 추가 disabled', async () => {
+  it('xlsx 헤더에 BPTC/Streamlit 마커 없음 → 형식 미감지 에러 + 추가 disabled', async () => {
     const file = makeXlsxFile('bad-headers.xlsx', [
       { 구분: '신선대', 선석: '1', 선박명: 'V', f: 18, e: 168 },
     ]);
@@ -213,8 +214,48 @@ describe('UploadDialog', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument();
     });
-    expect(screen.getByRole('alert').textContent).toMatch(/0행/);
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toMatch(/헤더를 인식할 수 없습니다/);
+    // 두 형식 가이드도 노출.
+    expect(alert.textContent).toMatch(/BPTC raw/);
+    expect(alert.textContent).toMatch(/Streamlit/);
     expect(screen.getByRole('button', { name: '추가' })).toBeDisabled();
+  });
+
+  it('Streamlit 원본 xlsx (ETB/접안위치) → 자동 변환 + "Streamlit 원본" 라벨', async () => {
+    const file = makeXlsxFile('streamlit-orig.xlsx', [
+      {
+        모선항차: 'S-1',
+        구분: '신선대',
+        선석: 1,
+        선박명: 'SV1',
+        선사: 'DYS',
+        ETB: 46098.04166666666,
+        ETD: 46098.66666666666,
+        ETA: 46098.04166666666,
+        '접안위치(F)': 18,
+        '접안위치(E)': 168,
+        '양하(Van)': 0,
+        '선적(Van)': 300,
+        'Shifting(Van)': 0,
+        항로: 'NCK',
+      },
+    ]);
+    const onAdded = vi.fn();
+    renderWithProviders(<UploadDialog file={file} onClose={() => {}} onAdded={onAdded} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: '시나리오 통계' })).toBeInTheDocument();
+    });
+    // 라벨: "Streamlit 원본 xlsx → BPT 형식 자동 변환"
+    expect(screen.getByText(/Streamlit 원본/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '추가' }));
+    expect(onAdded).toHaveBeenCalledOnce();
+    const saved = useUploadedScenarioStore.getState().scenarios;
+    expect(saved[0]?.rows).toHaveLength(1);
+    expect(saved[0]?.rows[0]?.terminal).toBe('SND');
+    expect(saved[0]?.rows[0]?.voyage).toBe('S-1');
   });
 
   it('label 입력 → 그 이름으로 등록', async () => {

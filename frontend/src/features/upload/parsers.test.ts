@@ -269,28 +269,29 @@ describe('parseXlsxInput — happy path', () => {
     expect(gam?.planStatus).toBe('discharge_planned');
   });
 
-  it('Date 셀 (cellDates) → "YYYY/MM/DD HH:mm" 정규화 후 parseKrDate 통과', async () => {
-    // sheet_to_json 에서 cellDates: true → JS Date 객체로 반환 → parsers.ts 가
-    // Date instanceof 분기로 KR 라벨 문자열로 정규화. parseXlsxInput 내부에서 처리됨.
-    const ws = XLSX.utils.aoa_to_sheet([
-      [
-        '구분', '선석', '모선항차', '선박명', '선사',
-        '입항 예정일시', '입항일시', '작업완료일시', '출항일시',
-        '양하', '선적', 'S/H', '항로', 'bp', 'f', 'e', 'plan_cd',
-      ],
-      [
-        '신선대', '1', 'D-TEST', 'TS', 'DYS',
-        new Date(2026, 4, 22, 3, 30),
-        new Date(2026, 4, 22, 3, 30),
-        new Date(2026, 4, 22, 8, 0),
-        new Date(2026, 4, 22, 8, 0),
-        0, 100, 0, 'NCK', 100, 18, 168, 'C',
-      ],
+  it('string 셀 "YYYY/MM/DD HH:mm" → parseKrDate 통과', async () => {
+    // BPTC raw 형식은 시간을 string cell 로 저장 (live API 응답 모방). cellDates 무관.
+    const buf = buildXlsx([
+      {
+        구분: '신선대',
+        선석: '1',
+        모선항차: 'D-TEST',
+        선박명: 'TS',
+        선사: 'DYS',
+        '입항 예정일시': '2026/05/22 03:30',
+        입항일시: '2026/05/22 03:30',
+        작업완료일시: '2026/05/22 08:00',
+        출항일시: '2026/05/22 08:00',
+        양하: 0,
+        선적: 100,
+        'S/H': 0,
+        항로: 'NCK',
+        bp: 100,
+        f: 18,
+        e: 168,
+        plan_cd: 'C',
+      },
     ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '선석배정');
-    const raw = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayLike<number>;
-    const buf = new Uint8Array(raw).buffer;
 
     const { payload } = await parseXlsxInput(buf, META);
     expect(payload.rows).toHaveLength(1);
@@ -326,13 +327,60 @@ describe('parseXlsxInput — 에러 경로', () => {
   // 구성이 까다로움 — 그래서 parseXlsxInput 의 _다른_ 에러 경로(0행 throw, 손상 buffer)로
   // 검증 커버리지를 확보한다.
 
-  it('모선항차 컬럼 자체가 없음 → 변환 0행 throw', async () => {
+  it('BPTC/Streamlit 마커가 모두 없는 헤더 → 형식 미감지 throw', async () => {
     const buf = buildXlsx([
       { 구분: '신선대', 선석: '1', 선박명: 'V', f: 18, e: 168 },
       { 구분: '신선대', 선석: '2', 선박명: 'W', f: 320, e: 500 },
     ]);
     await expect(parseXlsxInput(buf, META)).rejects.toBeInstanceOf(UploadParseError);
-    await expect(parseXlsxInput(buf, META)).rejects.toThrow(/0행/);
+    await expect(parseXlsxInput(buf, META)).rejects.toThrow(/헤더를 인식할 수 없습니다/);
+  });
+
+  it('헤더에 BPT + Streamlit 마커 동시 발견 → 충돌 throw', async () => {
+    const buf = buildXlsx([
+      {
+        구분: '신선대',
+        선석: '1',
+        모선항차: 'X',
+        입항일시: '2026/05/22 01:00',
+        작업완료일시: '2026/05/22 07:00',
+        ETB: 46098,
+        f: 18,
+        e: 168,
+      },
+    ]);
+    await expect(parseXlsxInput(buf, META)).rejects.toThrow(/두 형식 마커/);
+  });
+
+  it('Streamlit 원본 헤더 → 정상 ScenarioPayload + xlsxFormat="streamlit-xlsx"', async () => {
+    const buf = buildXlsx([
+      {
+        모선항차: 'S-1',
+        구분: '신선대',
+        선석: 1,
+        선박명: 'SV1',
+        선사: 'DYS',
+        ETB: 46098.04166666666,
+        ETD: 46098.66666666666,
+        ETA: 46098.04166666666,
+        '접안위치(F)': 18,
+        '접안위치(E)': 168,
+        '양하(Van)': 0,
+        '선적(Van)': 300,
+        'Shifting(Van)': 0,
+        항로: 'NCK',
+      },
+    ]);
+    const result = await parseXlsxInput(buf, META);
+    expect(result.xlsxFormat).toBe('streamlit-xlsx');
+    expect(result.payload.rows).toHaveLength(1);
+    const r = result.payload.rows[0];
+    expect(r?.terminal).toBe('SND');
+    expect(r?.berth).toBe(1);
+    expect(r?.voyage).toBe('S-1');
+    expect(r?.f).toBe(18);
+    expect(r?.e).toBe(168);
+    expect(r?.start).toMatch(/^2026/);
   });
 
   it('손상된 buffer → 엑셀 파싱 실패', async () => {
