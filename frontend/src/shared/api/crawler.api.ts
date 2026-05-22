@@ -27,9 +27,11 @@ export const CrawlerRawRowSchema = z
     전배: z.string().optional(),
     항로: z.string().optional(),
     검역: z.string().optional(),
-    bp: z.number().nullable().optional(),
-    f: z.number().nullable().optional(),
-    e: z.number().nullable().optional(),
+    // bp/f/e 는 live API 에선 JSON number 로 오지만, xlsx → sheet_to_json(raw:false)
+    // 경로에선 문자열이 됨. liveConverter.toNumberOrNull 가 양쪽 다 처리하므로 union 으로 받음.
+    bp: z.union([z.string(), z.number()]).nullable().optional(),
+    f: z.union([z.string(), z.number()]).nullable().optional(),
+    e: z.union([z.string(), z.number()]).nullable().optional(),
     // BPTC 선석배정 그래픽(G) 의 VslMsg plan_cd raw 값.
     // L=적하완료 / D=양하완료 / C=크래인배정 / 그 외=크래인미배정 / 미게재=null.
     plan_cd: z.string().nullable().optional(),

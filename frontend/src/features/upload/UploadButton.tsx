@@ -18,6 +18,7 @@ import { Button } from '@/shared/ui/Button';
 import { useToast } from '@/shared/ui/Toast';
 
 import { MAX_UPLOAD_BYTES } from './parsers';
+import { SampleDownloadMenu } from './SampleDownloadMenu';
 import { UploadDialog } from './UploadDialog';
 
 const Wrap = styled.div<{ dragging: boolean }>(({ theme, dragging }) => ({
@@ -123,6 +124,7 @@ export function UploadButton({ onAdded }: Props) {
           aria-hidden="true"
           tabIndex={-1}
         />
+        <SampleDownloadMenu />
       </Wrap>
 
       <UploadDialog

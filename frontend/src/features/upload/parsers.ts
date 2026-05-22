@@ -6,8 +6,8 @@
 //   (b) CrawlerRawRow[] JSON  ([{모선항차, 선석, 모선항차, ...}, ...])
 //                              — BPTC raw 한글 헤더 배열. liveConverter 로 변환.
 //   (c) 엑셀 (.xlsx)          — SheetJS 로 sheet → row 배열 → (b) 와 동일 경로.
-//                              현재 xlsx 패키지 미설치 → loadXlsxParser() throw.
-//                              사용자가 `npm install xlsx` 후 활성화.
+//                              xlsx 패키지는 dynamic import — 별 chunk 로 분리되어
+//                              parseXlsxInput 호출 시점에만 fetch 된다.
 //
 // 검증 실패는 즉시 throw (caller 가 toast 로 표시). 도메인 검증
 // (validateAssignments) 는 caller 가 별도로 — 여기선 "구조 검증" 까지만.
@@ -140,26 +140,21 @@ export function parseJsonInput(
 /**
  * 엑셀(.xlsx) → CrawlerRawRow[] → ScenarioPayload.
  *
- * SheetJS(`xlsx`) 는 supply-chain 정책으로 미설치 상태. `npm install xlsx` 후
- * 아래 동적 import 가 동작한다. 그 전엔 호출 시 즉시 throw — UploadButton 이
- * 사용자에게 안내 토스트를 보여준다.
+ * SheetJS(`xlsx`) 는 dependency 로 포함되며 vite 가 별 chunk 로 lazy 분리한다 —
+ * 이 함수가 처음 호출될 때만 ~700KB 청크가 fetch 된다 (main bundle 영향 X).
  */
 export async function parseXlsxInput(
   buffer: ArrayBuffer,
   meta: { id: string; label: string; sourceFile: string },
 ): Promise<{ payload: ScenarioPayload; droppedCount: number }> {
-  // 변수 이름으로 import → vite/rollup 의 static analysis 우회.
-  // xlsx 패키지가 없어도 build/test 가 통과한다. install 후 런타임에 동적 import.
-  // @vite-ignore 주석도 함께 (이중 안전장치).
-  const modName = 'xlsx';
+  // 동적 import — vite 가 별 chunk 로 분리. parse 시점에 처음 다운로드.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let XLSX: any;
   try {
-    XLSX = await import(/* @vite-ignore */ modName);
+    XLSX = await import('xlsx');
   } catch (e) {
     throw new UploadParseError(
-      '엑셀 업로드를 사용하려면 `xlsx` 패키지 설치가 필요합니다. ' +
-        '터미널에서 `cd frontend && npm install xlsx` 실행 후 다시 시도하세요.',
+      '엑셀 파서 모듈 로드 실패. 페이지를 새로고침해보세요.',
       e,
     );
   }
@@ -181,23 +176,29 @@ export async function parseXlsxInput(
     throw new UploadParseError(`시트 "${firstSheetName}" 를 읽을 수 없습니다.`);
   }
 
-  // 첫 행 = 헤더. 그 외 = data. defval='' 로 빈 셀도 빈 문자열 보존.
+  // 첫 행 = 헤더. 그 외 = data.
+  // defval='' — 빈 셀도 빈 문자열 보존.
+  // raw=true — date 셀(read 시 cellDates:true 로 Date 객체)을 그대로 유지해야
+  //   아래 Date→KR 정규화 분기가 동작. raw=false 면 SSF 가 미리 포맷팅해서
+  //   parseKrDate 패턴을 깨버림.
   const raw: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, {
     defval: '',
-    raw: false,
+    raw: true,
   });
 
   // Date 객체 → ISO string (sheet_to_json 이 cellDates 면 Date 반환).
+  // SheetJS 의 Date ↔ Excel serial 변환은 ms 단위 drift 가 있어 "HH:30" 이 "HH:29:59"
+  // 로 들어오기도 함 — 분 단위로 round 후 KR 라벨 만들어 parseKrDate 가 정확히 매칭되게.
   const normalized = raw.map((row) => {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
       if (v instanceof Date) {
-        // "YYYY/MM/DD HH:mm" — liveConverter 의 parseKrDate 가 이 패턴 인식.
-        const y = v.getFullYear();
-        const mo = String(v.getMonth() + 1).padStart(2, '0');
-        const d = String(v.getDate()).padStart(2, '0');
-        const h = String(v.getHours()).padStart(2, '0');
-        const mi = String(v.getMinutes()).padStart(2, '0');
+        const rounded = new Date(Math.round(v.getTime() / 60_000) * 60_000);
+        const y = rounded.getFullYear();
+        const mo = String(rounded.getMonth() + 1).padStart(2, '0');
+        const d = String(rounded.getDate()).padStart(2, '0');
+        const h = String(rounded.getHours()).padStart(2, '0');
+        const mi = String(rounded.getMinutes()).padStart(2, '0');
         out[k] = `${y}/${mo}/${d} ${h}:${mi}`;
       } else {
         out[k] = v;
