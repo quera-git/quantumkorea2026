@@ -4,6 +4,7 @@ import { Database, Layers } from 'lucide-react';
 import { useState } from 'react';
 
 import { BptPanel } from '@/features/bpt/BptPanel';
+import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { JobProgressCard } from '@/features/jobs/JobProgressCard';
 import { JobsListPanel } from '@/features/jobs/JobsListPanel';
 import { SolverPanel } from '@/features/jobs/SolverPanel';
@@ -38,6 +39,33 @@ const Layout = styled.div(({ theme }) => ({
     '@media (max-width: 1024px)': {
       padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
     },
+  },
+}));
+
+/**
+ * 좌측 컬럼 — SectionNav (상단 sticky) 위에 vessel detail panel 을 차곡차곡.
+ * SelectedVesselPanel 은 SectionNav 의 sticky 아래로 자연스럽게 따라옴 — 길어지면
+ * 그 위치에서 자체 스크롤이 발생하지 않고 페이지 전체가 스크롤됨.
+ */
+const LeftRail = styled.div(({ theme }) => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(3),
+  paddingBottom: theme.spacing(6),
+
+  '@media (max-width: 1024px)': {
+    paddingBottom: 0,
+  },
+}));
+
+/** SectionNav 아래에 자리잡는 vessel detail 영역 — 좁은 사이드에 맞춰 padding 만 적용. */
+const VesselDetailHolder = styled.div(({ theme }) => ({
+  padding: `0 ${theme.spacing(3)}`,
+
+  '@media (max-width: 1024px)': {
+    padding: `0 ${theme.spacing(4)}`,
+    // 모바일에선 SectionNav 가 horizontal scroll strip 으로 변하면서 화면 폭을 다 씀.
+    // detail 영역은 그 아래에 그대로 노출.
   },
 }));
 
@@ -132,7 +160,12 @@ export default function Dashboard() {
       <AppBar />
       <ShortcutModal />
       <Layout>
-        <SectionNav groups={NAV_GROUPS} />
+        <LeftRail>
+          <SectionNav groups={NAV_GROUPS} />
+          <VesselDetailHolder>
+            <SelectedVesselPanel />
+          </VesselDetailHolder>
+        </LeftRail>
 
         <main id="main-content" tabIndex={-1}>
           <Stack gap={8}>

@@ -17,7 +17,6 @@ import { useLiveScenarioStore } from '@/features/crawler/liveScenarioStore';
 import { EditorActionsBar } from '@/features/editor/EditorActionsBar';
 import { EditorCanvas } from '@/features/editor/EditorCanvas';
 import { useEditorStore } from '@/features/editor/editor.store';
-import { SelectedVesselPanel } from '@/features/editor/SelectedVesselPanel';
 import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
 import { UploadButton } from '@/features/upload/UploadButton';
@@ -126,14 +125,9 @@ const Tab = styled('button', {
   '&:focus-visible': { outline: 'none', boxShadow: theme.shadow.focus },
 }));
 
-const EditorGrid = styled.div(({ theme }) => ({
-  display: 'grid',
-  gridTemplateColumns: '1fr 320px',
-  gap: theme.spacing(3),
-  alignItems: 'start',
-  '@media (max-width: 1024px)': {
-    gridTemplateColumns: '1fr',
-  },
+// 단일 컬럼 — vessel detail panel 은 Dashboard 좌측 LeftRail 로 이동.
+const EditorGrid = styled.div(() => ({
+  display: 'block',
 }));
 
 const ResultDot = styled.span(({ theme }) => ({
@@ -417,7 +411,6 @@ export function ScenarioPanel() {
             <StatusLegend rows={editorRows} />
             <EditorGrid>
               <EditorCanvas assignments={editorRows} />
-              <SelectedVesselPanel />
             </EditorGrid>
           </Stack>
         )}
