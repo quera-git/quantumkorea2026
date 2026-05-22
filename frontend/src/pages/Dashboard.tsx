@@ -22,8 +22,9 @@ const Page = styled.div(({ theme }) => ({
 }));
 
 const Layout = styled.div(({ theme }) => ({
-  maxWidth: 1440,
-  margin: '0 auto',
+  // 좌측 pin — center 가 아니라 화면 왼쪽 끝에 sidebar 부착, main 은 viewport 끝까지 확장.
+  // gantt/timeline 이 가로로 길어 wide-screen 일수록 이득.
+  width: '100%',
   display: 'grid',
   gridTemplateColumns: '224px minmax(0, 1fr)',
   alignItems: 'start',
@@ -35,9 +36,14 @@ const Layout = styled.div(({ theme }) => ({
   '& > *': { minWidth: 0 },
   '& > main': {
     padding: `${theme.spacing(8)} ${theme.spacing(6)}`,
+    // 아주 큰 모니터 (≥1920px) 에서 줄이 너무 길어지지 않게 본문 텍스트만 maxWidth.
+    // gantt 차트는 자체 width:100% 라 풀폭 유지.
 
     '@media (max-width: 1024px)': {
       padding: `${theme.spacing(5)} ${theme.spacing(3)}`,
+    },
+    '@media (max-width: 640px)': {
+      padding: `${theme.spacing(4)} ${theme.spacing(2)}`,
     },
   },
 }));
