@@ -1,9 +1,10 @@
 # --- Secrets ---
 .env
 .env.local
-secrets/*.lic
-secrets/*.key
-secrets/*.pem
+# secrets/ 디렉토리 전체 제외 — .lic / .key / .pem / .backup / WLS / 새 형식 등
+# 어떤 시크릿 파일도 실수로 git 에 올라가지 않게. .gitkeep 만 추적 (디렉토리 유지).
+secrets/*
+!secrets/.gitkeep
 
 # --- Python ---
 __pycache__/
