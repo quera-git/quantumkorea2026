@@ -13,7 +13,6 @@ import { useEffect } from 'react';
 
 import { Button } from '@/shared/ui/Button';
 import { EmptyState } from '@/shared/ui/EmptyState';
-import { Stack } from '@/shared/ui/Stack';
 import { useToast } from '@/shared/ui/Toast';
 
 import { useEditorStore } from './editor.store';
@@ -21,11 +20,13 @@ import { useEditorStore } from './editor.store';
 const Card = styled.div(({ theme }) => ({
   border: `1px solid ${theme.color.border}`,
   borderRadius: theme.radius.lg,
-  padding: theme.spacing(4),
+  // 좌측 사이드바 (~224px) 안에 들어가므로 padding 을 작게.
+  padding: theme.spacing(3),
   background: theme.color.surface,
   display: 'flex',
   flexDirection: 'column',
-  gap: theme.spacing(3),
+  gap: theme.spacing(2.5),
+  minWidth: 0,
 }));
 
 const Header = styled.div(({ theme }) => ({
@@ -49,14 +50,15 @@ const Header = styled.div(({ theme }) => ({
 const Grid = styled.dl(({ theme }) => ({
   margin: 0,
   display: 'grid',
-  gridTemplateColumns: '92px 1fr',
+  // 라벨 컬럼 92→56px 로 축소 — 좁은 사이드바에서 값 영역 확보.
+  gridTemplateColumns: '56px minmax(0, 1fr)',
   rowGap: theme.spacing(1.5),
-  columnGap: theme.spacing(2),
+  columnGap: theme.spacing(1.5),
   fontSize: theme.font.size.sm,
 
   '& dt': {
     color: theme.color.textSubtle,
-    fontSize: theme.font.size.xs,
+    fontSize: 10,
     textTransform: 'uppercase',
     letterSpacing: theme.font.letter.wide,
     fontWeight: theme.font.weight.semibold,
@@ -65,52 +67,74 @@ const Grid = styled.dl(({ theme }) => ({
   '& dd': {
     margin: 0,
     fontFamily: theme.font.mono,
+    fontSize: theme.font.size.xs,
     color: theme.color.text,
-    wordBreak: 'break-all',
+    wordBreak: 'break-word',
+    minWidth: 0,
   },
   '& .delta': {
     color: theme.color.primary,
     fontSize: theme.font.size.xs,
     marginLeft: theme.spacing(1),
+    display: 'inline-block',
   },
 }));
 
 const NudgeBlock = styled.div(({ theme }) => ({
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: theme.spacing(2),
+  // 좁은 사이드바라 시간/위치 두 그룹을 세로로 stack.
+  display: 'flex',
+  flexDirection: 'column',
+  gap: theme.spacing(1.5),
 
   '& > div': {
     display: 'flex',
-    flexDirection: 'column',
-    gap: theme.spacing(1.5),
-    padding: theme.spacing(2),
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing(1),
+    padding: `${theme.spacing(1.5)} ${theme.spacing(2)}`,
     background: theme.color.surfaceAlt,
     borderRadius: theme.radius.md,
-    alignItems: 'center',
   },
   '& .label': {
-    fontSize: theme.font.size.xs,
+    fontSize: 10,
     color: theme.color.textSubtle,
     textTransform: 'uppercase',
     fontWeight: theme.font.weight.semibold,
     letterSpacing: theme.font.letter.wide,
+    whiteSpace: 'nowrap',
   },
-  '& .row': { display: 'flex', gap: theme.spacing(1) },
+  '& .row': { display: 'flex', gap: theme.spacing(0.5) },
+}));
+
+const ActionRow = styled.div(({ theme }) => ({
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr 1fr',
+  gap: theme.spacing(1),
+  '& button': {
+    minWidth: 0,
+    width: '100%',
+    padding: '6px 0',
+    justifyContent: 'center',
+  },
 }));
 
 const ShortcutHint = styled.div(({ theme }) => ({
-  fontSize: theme.font.size.xs,
+  fontSize: 10,
+  lineHeight: 1.5,
   color: theme.color.textSubtle,
   fontFamily: theme.font.mono,
   textAlign: 'center',
+  display: 'flex',
+  flexWrap: 'wrap',
+  justifyContent: 'center',
+  gap: theme.spacing(0.5),
   '& kbd': {
-    padding: '1px 5px',
+    padding: '0 4px',
     background: theme.color.surfaceMuted,
     border: `1px solid ${theme.color.border}`,
     borderRadius: theme.radius.sm,
     fontFamily: theme.font.mono,
-    fontSize: theme.font.size.xs,
+    fontSize: 10,
     color: theme.color.text,
   },
 }));
@@ -282,19 +306,21 @@ export function SelectedVesselPanel({ keyboardEnabled = true }: Props) {
       </NudgeBlock>
 
       <ShortcutHint>
-        키보드: <kbd>←</kbd> <kbd>→</kbd> 시간 · <kbd>↑</kbd> <kbd>↓</kbd> 위치 ·{' '}
-        <kbd>⌘Z</kbd> undo · <kbd>⇧⌘Z</kbd> redo
+        <span><kbd>←</kbd><kbd>→</kbd>시간</span>
+        <span><kbd>↑</kbd><kbd>↓</kbd>위치</span>
+        <span><kbd>⌘Z</kbd>undo</span>
       </ShortcutHint>
 
-      <Stack direction="row" gap={2}>
+      <ActionRow>
         <Button
           size="sm"
           variant="secondary"
           onClick={undo}
           disabled={!canUndo}
           aria-label="실행 취소"
+          title="실행 취소 (⌘Z)"
         >
-          <Undo2 size={14} aria-hidden="true" /> Undo
+          <Undo2 size={14} aria-hidden="true" />
         </Button>
         <Button
           size="sm"
@@ -302,8 +328,9 @@ export function SelectedVesselPanel({ keyboardEnabled = true }: Props) {
           onClick={redo}
           disabled={!canRedo}
           aria-label="다시 실행"
+          title="다시 실행 (⇧⌘Z)"
         >
-          <Redo2 size={14} aria-hidden="true" /> Redo
+          <Redo2 size={14} aria-hidden="true" />
         </Button>
         <Button
           size="sm"
@@ -317,10 +344,11 @@ export function SelectedVesselPanel({ keyboardEnabled = true }: Props) {
           }}
           disabled={!isDirty}
           aria-label="편집 초기화"
+          title="편집 초기화"
         >
-          <RotateCcw size={14} aria-hidden="true" /> 초기화
+          <RotateCcw size={14} aria-hidden="true" />
         </Button>
-      </Stack>
+      </ActionRow>
     </Card>
   );
 }
