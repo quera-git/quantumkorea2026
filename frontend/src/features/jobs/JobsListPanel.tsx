@@ -1,7 +1,14 @@
 import styled from '@emotion/styled';
-import { History, Inbox, Loader2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Download, History, Inbox, Loader2 } from 'lucide-react';
 
+import { useEditorStore } from '@/features/editor/editor.store';
+import { deriveReferenceTime, stitchResult } from '@/features/solver-adapter/adapter';
 import { extractErrorMessage } from '@/shared/api/client';
+import { queryKeys } from '@/shared/api/queryKeys';
+import { getJobResult } from '@/shared/api/results.api';
+import type { Assignment } from '@/shared/domain/types';
+import { scheduleEntryToAssignment } from '@/shared/domain/vesselAdapters';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { EmptyState } from '@/shared/ui/EmptyState';
@@ -9,6 +16,7 @@ import { SectionHeader } from '@/shared/ui/SectionHeader';
 import { Skeleton, SkeletonStack } from '@/shared/ui/Skeleton';
 import { Stack } from '@/shared/ui/Stack';
 import { StatusBadge } from '@/shared/ui/StatusBadge';
+import { useToast } from '@/shared/ui/Toast';
 
 import { useJobsList } from './jobs.queries';
 
@@ -92,6 +100,90 @@ function formatTime(iso: string | null): string {
 export function JobsListPanel({ leftJobId, rightJobId, onSelectLeft, onSelectRight }: Props) {
   const list = useJobsList();
   const jobs = list.data ?? [];
+  const qc = useQueryClient();
+  const setResult = useEditorStore((s) => s.setResult);
+  const originalRows = useEditorStore((s) => s.originalRows);
+  const toast = useToast();
+
+  /**
+   * BPT 직접 워크플로의 완료된 job 결과를 시나리오 + 편집의 '솔버 결과' 탭으로 흘려보냄.
+   * editor.store.lastResult 에 적재 → ScenarioPanel 의 솔버 결과/비교 탭에서 사용 가능.
+   *
+   * 풍부 stitch:
+   *   - editor.store.originalRows (활성 시나리오 snapshot) 가 있으면 stitchResult 로
+   *     vessel_id ↔ voyage 매칭 → voyage/vessel/company/route/planStatus/sectionRaw 복원.
+   *   - originalRows 비어있으면 (시나리오 미활성 상태) scheduleEntryToAssignment fallback —
+   *     vessel_id 만 채워진 단순 Assignment.
+   */
+  async function loadIntoEditor(jobId: string, solver: 'gurobi' | 'cqm' | 'hybrid') {
+    try {
+      const data = await qc.fetchQuery({
+        queryKey: queryKeys.jobs.result(jobId),
+        queryFn: () => getJobResult(jobId),
+        staleTime: 4_000,
+      });
+
+      let rows: Assignment[];
+      let unmatched: string[] = [];
+      let referenceIso: string;
+
+      // 풍부 stitch 시도 — 활성 시나리오 rows 와 vessel_id 매칭.
+      // 단, 매칭률 0% 면 (= 다른 시나리오의 job 이거나 시나리오 미활성) fallback 으로
+      // schedule 그대로 표시. 차트는 어떻게든 보이게.
+      //
+      // ⚠ scheduleEntryToAssignment 의 3번째 인자(ref) 가 필수 —
+      //    안 넘기면 start/end/eta 가 모두 null → 차트 빈 화면 + 편집기 제출 시 검증 실패.
+      //    시나리오 활성 시 그 reference 사용, 미활성이면 현재 시각으로.
+      if (originalRows.length > 0) {
+        const ref = deriveReferenceTime(originalRows);
+        const stitched = stitchResult(data.schedule, originalRows, ref);
+        if (stitched.rows.length > 0) {
+          // 일부라도 매칭됨 — 풍부 stitch 결과 사용.
+          rows = stitched.rows;
+          unmatched = stitched.unmatched;
+          referenceIso = ref.toISOString();
+        } else {
+          // 매칭률 0% — 활성 시나리오와 무관한 job. fallback (시나리오 ref 재활용).
+          rows = data.schedule.map((s, i) => scheduleEntryToAssignment(s, i, ref));
+          referenceIso = ref.toISOString();
+        }
+      } else {
+        // 시나리오 미활성 — 현재 시각을 ref 로.
+        const ref = new Date();
+        rows = data.schedule.map((s, i) => scheduleEntryToAssignment(s, i, ref));
+        referenceIso = ref.toISOString();
+      }
+
+      setResult({
+        jobId,
+        solver,
+        rows,
+        referenceIso,
+        unmatched,
+        objectiveValue: data.objective_value ?? null,
+        elapsedSeconds: data.elapsed_seconds ?? null,
+        storedAt: new Date().toISOString(),
+      });
+
+      const stitchedNote =
+        unmatched.length === 0 && originalRows.length > 0 && rows.length > 0
+          ? `${rows.length}척 stitch 완료 (풍부 메타 포함)`
+          : originalRows.length > 0 && unmatched.length === rows.length
+            ? `${rows.length}척 (활성 시나리오와 vessel_id 매칭 X — 단순 불러옴)`
+            : `${rows.length}척${unmatched.length > 0 ? ` (매칭 X ${unmatched.length}척)` : ''}`;
+      toast.notify({
+        tone: 'success',
+        title: '솔버 결과를 시나리오 편집기로 불러왔습니다',
+        description: `${stitchedNote} — '시나리오 + 편집' 의 '솔버 결과' / '비교' 탭에서 확인 가능.`,
+      });
+    } catch (e) {
+      toast.notify({
+        tone: 'danger',
+        title: '결과 불러오기 실패',
+        description: extractErrorMessage(e),
+      });
+    }
+  }
 
   return (
     <Card>
@@ -171,6 +263,16 @@ export function JobsListPanel({ leftJobId, rightJobId, onSelectLeft, onSelectRig
                           onClick={() => onSelectRight(j.job_id)}
                         >
                           우
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={!finished}
+                          onClick={() => loadIntoEditor(j.job_id, j.solver)}
+                          aria-label={`작업 ${shortId(j.job_id)} 결과를 시나리오 편집기로 불러오기`}
+                          title="시나리오 + 편집의 '솔버 결과' 탭으로 불러오기"
+                        >
+                          <Download size={12} aria-hidden="true" />
                         </Button>
                       </Stack>
                     </td>
