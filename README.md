@@ -1,169 +1,162 @@
-# Quantum Port Optimizer
+# Quantum Port Optimizer — 부스 데모 사용법
 
-부산항 신항 컨테이너 터미널의 선석 배정·크레인 할당 (BACAP) 문제를 **양자(D‑Wave CQM) + 고전(Gurobi MIP) 하이브리드** 로 푸는 의사결정 지원 시스템.
+부산항 신항 BACAP 양자 최적화 데모. Quantum Korea 2026 부스용.
 
-**Quantum Korea 2026 부스 데모** (2026‑07‑02 ~ 07‑04) 용 React 프론트엔드 + 3‑티어 백엔드.
-
-> 데모 라이브 URL — Vercel (`quera-git/quantumkorea2026` 의 main 브랜치 자동 배포, frontend-only)
+라이브: Vercel 자동 배포 (`quera-git/quantumkorea2026` main)
 
 ---
 
-## 1. 빠른 둘러보기 (데모 모드)
+## 0. 데이터 준비 — 필요 없음
 
-`VITE_DEMO_MODE=1` 로 빌드된 정적 사이트만으로 모든 시나리오·솔버 결과를 확인할 수 있다. 백엔드 / D‑Wave 토큰 / Gurobi 라이선스 **없이** 동작.
+페이지 처음 열면 **3 시나리오 × 5 결과 = 15 케이스** 가 자동 등록된다. 별도 업로드/로그인 X.
 
-### 데모에서 보여지는 것
-
-3 시나리오 × 5 결과 = **15 케이스** 가 첫 로드 시 자동 등록된다.
-
-| 시나리오 | 입력 | 특징 | 척 수 |
-|---------|------|-----|------|
-| #1 | BPT_Result | 일반 운영 (BPTC 운영자 결과 없음) | 62 |
-| #2 | Before 0313 14:30 | 낮시간 혼잡 | 58 |
-| #3 | Before 0316 08:00 | 크레인 부족 | 58 |
-
-각 시나리오마다 4 솔버: **CQM(양자) / Hybrid / Gurobi / 운영자(실측)**
-
-### 데모 워크플로
-
-1. **시나리오** 탭 — 입력 데이터 (Gantt) 확인. 칩 클릭으로 시나리오 전환.
-2. **4‑way 비교** 탭 — 한 시나리오의 4 솔버 결과를 2×2 그리드로 동시 비교.
-   - 각 셀: `총 체류시간 / 계산시간 / 위반 건수` + Gantt (위반 = 빨강, 정상 = 초록)
-   - 운영자 데이터 없음 → `"BPTC 측 실제 데이터가 없습니다"`
-   - 솔버 실패 (#1 Gurobi) → `"풀이 실패"`
-   - 📌 핀 버튼 — 해당 결과를 **시나리오 pill 에 추가** → 편집/검증 탭에서 만질 수 있음.
-3. **편집** 탭 — pill 로 선택한 결과의 행 수정 / 추가 / 삭제. 재검증.
-4. **검증** 탭 — 12 종 제약 (Clearance / Crane / Window / Tide / 등) 위반 목록.
-
----
-
-## 2. 시스템 아키텍처
-
-```
-┌──────────┐  HTTP   ┌──────────┐  HTTP   ┌──────────┐
-│ frontend │ ──────▶ │ backend  │ ──────▶ │  worker  │
-│ React/TS │ :8080   │ FastAPI  │ :8000   │ FastAPI  │
-│ Vite     │         │ SQLite   │         │ D-Wave + │
-│          │         │ BPTC 크롤│         │  Gurobi  │
-└──────────┘         └──────────┘         └──────────┘
-                                               △
-                                          토큰/라이선스만
-                                          이 컨테이너에 주입
-```
-
-| 컨테이너 | 토큰 | 호스트 노출 |
+| 시나리오 | 입력 데이터 | 특징 |
 |---|---|---|
-| `frontend` | ❌ | :8080 |
-| `backend` | ❌ | :8000 |
-| `worker` | ✅ D‑Wave + Gurobi | ❌ (내부 전용) |
+| **#1** | BPT_Result | 일반 운영 (62척, 운영자 데이터 없음) |
+| **#2** | Before 0313 14:30 | 낮시간 혼잡 (58척) |
+| **#3** | Before 0316 08:00 | 크레인 부족 (58척) |
 
-`worker` 는 같은 docker network 내 `backend` 만 호출 가능. 자세한 규칙은 [`AGENTS.md`](./AGENTS.md).
-
----
-
-## 3. 로컬 풀스택 셋업 (양자 풀이 실측)
-
-### 3.1. D‑Wave Leap 토큰
-https://cloud.dwavesys.com/leap → API 토큰 복사.
-
-### 3.2. `.env` 작성
-```bash
-cp .env.example .env
-# DWAVE_API_TOKEN=... 채움
-```
-
-### 3.3. Gurobi 라이선스
-학술 WLS / named‑user 라이선스를 `secrets/gurobi.lic` 에 둔다.
-```bash
-cp ~/Downloads/gurobi.lic secrets/gurobi.lic
-```
-`.env`, `secrets/*.lic` 모두 **gitignored**.
-
-### 3.4. 기동
-```bash
-docker compose up --build
-```
-- Frontend: http://localhost:8080
-- Backend Swagger: http://localhost:8000/docs
-
-### 3.5. 데모 모드로 로컬 실행 (백엔드 없이)
-```bash
-cd frontend
-echo "VITE_DEMO_MODE=1" > .env.local
-npm install
-npm run dev
-# http://localhost:5173
-```
+각 시나리오마다 4 솔버 결과: **CQM(양자) / Hybrid / Gurobi / 운영자(실측)**
 
 ---
 
-## 4. Vercel 배포 — **남은 설정 1가지**
+## 1. 시나리오 탭 — 입력 데이터 보기
 
-저장소 `quera-git/quantumkorea2026` 의 `main` 브랜치 push 마다 자동 배포되도록 이미 연결돼 있다. 신규 Vercel 프로젝트 생성 시 또는 환경변수 누락 시 다음을 확인:
+페이지 첫 화면. 상단 pill 행에 `#1 입력`, `#2 입력`, `#3 입력` 칩 3개.
 
-### Project Settings → Build & Development
+1. 칩을 클릭해서 시나리오 전환
+2. 아래 Gantt 차트가 해당 시나리오의 **입력 상태** (Before, 운영자가 풀기 전) 표시
+3. 위쪽 SND (선석 배정), 아래쪽 GAM (크레인 할당) — GAM 데이터 없는 시나리오는 SND 만 표시
 
-| 항목 | 값 |
-|---|---|
-| **Framework Preset** | `Vite` |
-| **Root Directory** | `frontend` |
-| **Build Command** | `npm run build` (기본값) |
-| **Output Directory** | `dist` (기본값) |
-| **Install Command** | `npm install` (기본값) |
-
-### Project Settings → Environment Variables ⚠️ (이게 남은 그거)
-
-| Name | Value | Environments |
-|---|---|---|
-| `VITE_DEMO_MODE` | `1` | Production + Preview + Development |
-
-이거 안 깔아두면 빌드는 되지만 BPTC 라이브 패널·BPT 직접 워크플로 NAV 가 보이고 (백엔드 없으니) 모두 fail. 반드시 `1` 로 설정.
-
-설정 후 **Redeploy** (가장 최근 빌드 옆 ⋯ → Redeploy) 한 번 눌러주면 환경변수가 반영된다.
-
-> 토큰류 (`DWAVE_API_TOKEN`, `gurobi.lic`) 는 Vercel 에 **절대 넣지 않는다**. 데모 모드는 사전 계산된 결과 (`frontend/public/demo/*.payload.json`) 만 사용.
+> 💡 결과 칩 (`#1 CQM 결과` 등) 은 기본적으로 숨겨져 있다. 입력만 보여서 깔끔. 결과를 pill 에 꺼내려면 § 3 참고.
 
 ---
 
-## 5. 개발
+## 2. 4-way 비교 탭 — **부스 메인 화면**
 
-각 서비스 디렉토리에서 로컬 실행도 가능 (도커 밖에서는 `shared/` 를 PYTHONPATH 에 추가).
+좌측 NAV → **`4-way 비교`** 클릭. (또는 `결과 분석 + 편집` 섹션 안에 있을 수 있음)
 
-```bash
-# backend
-cd backend && uv venv && uv pip install -e . && \
-  PYTHONPATH=.. uvicorn app.main:app --reload --port 8000
+### 화면 구성
 
-# worker
-cd worker && uv venv && uv pip install -e . && \
-  PYTHONPATH=.. uvicorn app.main:app --reload --port 9000
-
-# frontend
-cd frontend && npm install && npm run dev
+```
+┌─ 시나리오: [#1] [#2] [#3]    ← 토글 ─────────────┐
+│                                                  │
+│  ┌──────────┐  ┌──────────┐                      │
+│  │   CQM    │  │  Hybrid  │   ← 2×2 그리드        │
+│  │ 1,545h   │  │ 1,048h   │      각 셀:           │
+│  │ 4,290s   │  │ 3,711s   │      · 총 체류시간    │
+│  │ 위반 0건 │  │ 위반 0건 │      · 계산시간       │
+│  │ [Gantt]  │  │ [Gantt]  │      · 위반 건수      │
+│  └──────────┘  └──────────┘      · Gantt          │
+│  ┌──────────┐  ┌──────────┐                      │
+│  │  Gurobi  │  │ 운영자   │                      │
+│  └──────────┘  └──────────┘                      │
+└──────────────────────────────────────────────────┘
 ```
 
-### 데모용 시나리오 재생성
+### 사용 흐름
 
-`frontend/Figure/Optimized_*.xlsx` 가 갱신되면:
-```bash
-cd frontend && node scripts/convert-figure-results.mjs
-# → frontend/public/demo/scenario-*.payload.json 15 개 재생성
+1. **상단 토글로 시나리오 선택** — `#1` / `#2` / `#3`
+2. **4 솔버 카드 동시 비교**
+   - `총 체류시간` = 모든 선박이 항만에 머문 시간 총합 (시간). 작을수록 좋음.
+   - `계산시간` = 솔버가 풀이에 쓴 시간 (초)
+   - `위반 건수` = 12 가지 제약 (clearance / crane / window / 등) 을 어긴 선박 수
+3. **Gantt 색깔**
+   - 🟩 초록 = 정상
+   - 🟥 빨강 = 위반 (위반 건수 와 정확히 일치)
+4. **빈 셀의 의미**
+   - "BPTC 측 실제 데이터가 없습니다" → 운영자 실측 데이터 부재 (#1 운영자)
+   - "풀이 실패" → 솔버가 해당 시나리오 풀이 실패 (#1 Gurobi)
+
+### 부스에서 보여주는 포인트
+
+- **#2 / #3** 에서 양자(CQM/Hybrid) 가 운영자보다 짧은 총 체류시간을 냄
+- **위반 건수**: 운영자 결과는 일부 빨강 (인간이 풀 수밖에 없는 한계), 솔버 결과는 거의 0
+- **계산시간**: Hybrid 가 가장 빠른 케이스가 많음 (양자 + 고전 혼합 효율)
+
+---
+
+## 3. 📌 핀 버튼 — 결과를 만지고 싶을 때
+
+4-way 비교의 각 셀 우측 상단에 작은 핀 아이콘.
+
+1. 만지고 싶은 솔버 결과 카드의 **📌 클릭** → 토스트 없이 즉시 적용
+2. **시나리오 탭** 으로 돌아가면 상단 pill 행에 `#1 CQM 결과` 같은 칩이 추가됨
+3. 그 칩을 클릭해 활성화 → **편집** / **검증** / **비교** 탭에서 해당 결과를 직접 수정 가능
+4. 다시 4-way 탭에서 같은 핀 클릭 → 📌 OFF → pill 에서 사라짐
+
+### 핀 버튼이 안 보이는 경우
+
+- 빈 데이터 셀 (운영자 없음 / 풀이 실패) — 핀할 게 없으니 hidden
+- 그 외엔 항상 우측 상단에 표시됨
+
+---
+
+## 4. 편집 탭 — 결과 수정해보기
+
+핀한 결과를 활성화한 상태에서:
+
+1. **편집** 탭 → 선박 행 테이블
+2. 셀 클릭으로 berth / start / end / crane 등 수정
+3. 새 행 추가 / 삭제 가능
+4. 수정하면 자동 재검증 → 위반 발생 시 빨강
+
+> 💡 손댄 결과는 localStorage 에 저장된다. 페이지 새로고침해도 유지. 초기화하려면 핀 OFF 또는 브라우저 사이트 데이터 삭제.
+
+---
+
+## 5. 검증 탭 — 위반 상세
+
+4-way 비교의 위반 건수가 어떤 제약 위반인지 보고 싶을 때:
+
+1. 검증할 결과를 시나리오 pill 에서 선택
+2. **검증** 탭 → 12 종 제약별 위반 목록 표
+3. 항목 클릭 → 어떤 선박 / 어떤 시각에서 위반 됐는지 표시
+
+대표적인 제약:
+- **Clearance** — 인접 선박 간 안전 거리 부족
+- **Crane** — 동시 크레인 사용 초과
+- **Window** — 도착/출발 시간 윈도우 위반
+- **Tide** — 조위(만조/간조) 조건 위반
+
+---
+
+## 6. 비교 탭 — 두 결과 직접 비교
+
+(4-way 가 아닌) 임의의 두 결과를 좌우로 비교하고 싶을 때:
+
+1. 핀해서 pill 에 노출시킨 결과 2개를 선택
+2. **비교** 탭 → 좌우 Gantt 동시 표시 + 차이 metric (총 체류시간 차이, 위반 차이 등)
+
+---
+
+## 부스 시연 권장 동선 (5분)
+
+```
+[시나리오 탭]
+  → #1 클릭, 입력 Gantt 보여주기 (62척 어떻게 들어와있나)
+
+[4-way 비교 탭]
+  → #2 토글
+  → 운영자 vs CQM 총 체류시간 비교 (양자가 짧음을 강조)
+  → #3 토글, 위반 빨강 비교 (운영자에 빨강 있음, 솔버는 깨끗)
+
+[핀 → 편집]
+  → #2 CQM 결과 핀
+  → 시나리오 탭으로 돌아가서 pill 에 추가됨 확인
+  → 편집 탭에서 한 선박의 berth 변경 → 즉시 빨강 발생
+  → "양자 솔버가 만든 해는 이미 최적, 사람이 손대면 무너진다" 메시지
 ```
 
 ---
 
-## 6. 보안 체크리스트
+## 자주 묻는 질문
 
-- [ ] `.env` 가 `.gitignore` 에 포함되어 있는가
-- [ ] `secrets/gurobi.lic` 이 git 에 추적되지 않는가 (`git ls-files secrets/` 비어야 함)
-- [ ] `worker` 서비스에 `ports:` 매핑이 없는가
-- [ ] `frontend` / `backend` 컨테이너에 `DWAVE_API_TOKEN` 이 주입되지 않는가
-- [ ] 토큰이 로그 / 응답에 출력되지 않는가
-- [ ] Vercel 환경변수에 토큰이 추가되지 않았는가 (`VITE_DEMO_MODE` 만 있어야 함)
+**Q. 백엔드는요? D-Wave 토큰 / Gurobi 라이선스는?**
+A. 이 데모는 사전 계산된 결과 (xlsx → JSON 변환본) 만 사용한다. 실시간 양자 풀이는 로컬 풀스택 (`docker compose up`) 으로 가능하지만 부스에서는 안정성을 위해 정적 데모만.
 
----
+**Q. 위반 건수가 보고서랑 다른데요?**
+A. 보고서 §4.2 표 4.2 의 수치는 정적이고, 데모 UI 는 `validateAssignments()` 로 실시간 계산한다. 검증 알고리즘이 더 엄격할 수 있어 보고서보다 많이 나오는 경우 있음.
 
-## 7. 라이선스 / 인용
-
-- 부산대학교 양자정보컴퓨팅 연구실 — Quantum Korea 2026 부스 데모
-- 보고서: `Quantum Korea 2026 — 부산항 신항 BACAP 양자 최적화` (§4.2 표 4.2 의 obj/elapsed 수치를 데모 UI 가 참조)
+**Q. 페이지 처음 열었을 때 시나리오가 안 보여요.**
+A. 브라우저 콘솔 열고 `[demo] register fail` 메시지 확인. 강제 새로고침 (`Cmd+Shift+R`).
