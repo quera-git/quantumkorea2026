@@ -6,6 +6,7 @@ import { Plot } from '@/shared/ui/Plot';
 import { TERMINAL_LAYOUT, type Terminal } from '@/shared/domain/constants';
 import { planStatusVisual } from '@/shared/domain/statusColors';
 import type { Assignment } from '@/shared/domain/types';
+import { validateAssignments } from '@/features/validation/validation';
 import { VesselDetailDialog } from '@/shared/ui/VesselDetailDialog';
 import { VesselHoverCard } from '@/shared/ui/VesselHoverCard';
 
@@ -17,6 +18,14 @@ interface Props {
   height?: number;
   /** 시작 시각 클램프 (옵션). 미지정 시 데이터 min/max 자동. */
   xRange?: [string, string];
+  /**
+   * 발표/사진용 임시 모드. true 면 colorBy 무시하고:
+   *   - 검증 위반 row (시간 겹침, 30m 이격 위반 등) → 빨강/핑크
+   *   - 그 외 정상 row → 초록/연두
+   * 발표 자료에서 원본 시나리오 vs 솔버 결과 비교 시 "원본 = 문제 있음" 을
+   * 시각적으로 명확히 어필.
+   */
+  presentationMode?: boolean;
 }
 
 const TERMINAL_ORDER: Terminal[] = ['SND', 'GAM'];
@@ -60,7 +69,12 @@ function rgbaWithAlpha(hex: string, alpha: number): string {
  * - 선석 경계는 각 subplot 안 점선.
  * - 클릭/드래그 없음 (Phase 4 에서 별도 editor 컴포넌트로 추가).
  */
-export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
+export function SplitTimeline({
+  assignments,
+  height = 720,
+  xRange,
+  presentationMode = false,
+}: Props) {
   const theme = useTheme();
   const isDark = theme.mode === 'dark';
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : '#eef0f6';
@@ -68,9 +82,20 @@ export function SplitTimeline({ assignments, height = 720, xRange }: Props) {
   const tickColor = isDark ? theme.color.textMuted : '#475569';
   const colorBy = useColorBy((s) => s.mode);
 
+  // presentationMode: 검증 위반 rowId 집합 — 빨강 처리에 사용.
+  const invalidRowIds = useMemo(() => {
+    if (!presentationMode) return new Set<string>();
+    const issues = validateAssignments(assignments);
+    const set = new Set<string>();
+    for (const it of issues) {
+      for (const id of it.rowIds) set.add(id);
+    }
+    return set;
+  }, [presentationMode, assignments]);
+
   const { traces, shapes, annotations, computedXRange } = useMemo(
-    () => buildFigure(assignments, xRange, colorBy),
-    [assignments, xRange, colorBy],
+    () => buildFigure(assignments, xRange, colorBy, presentationMode, invalidRowIds),
+    [assignments, xRange, colorBy, presentationMode, invalidRowIds],
   );
 
   const assignmentByRowId = useMemo(() => {
@@ -204,6 +229,8 @@ function buildFigure(
   assignments: Assignment[],
   xRangeProp: [string, string] | undefined,
   colorBy: ColorByMode,
+  presentationMode: boolean,
+  invalidRowIds: Set<string>,
 ): FigureBuild {
   const traces: Partial<PlotData>[] = [];
   const shapes: Partial<Shape>[] = [];
@@ -234,7 +261,16 @@ function buildFigure(
 
     let fillColor: string;
     let strokeColor: string;
-    if (colorBy === 'status') {
+    if (presentationMode) {
+      // 발표/사진용 — colorBy 무시: 위반 row 는 핑크/빨강, 정상은 연두/초록.
+      if (invalidRowIds.has(a.rowId)) {
+        fillColor = 'rgba(244, 114, 182, 0.72)'; // pink-400
+        strokeColor = 'rgba(190, 24, 93, 1)';     // pink-700
+      } else {
+        fillColor = 'rgba(134, 239, 172, 0.72)'; // green-300
+        strokeColor = 'rgba(22, 163, 74, 1)';     // green-600
+      }
+    } else if (colorBy === 'status') {
       const v = planStatusVisual(a.planStatus);
       fillColor = v.fill;
       strokeColor = v.stroke;

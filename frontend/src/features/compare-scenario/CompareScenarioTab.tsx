@@ -204,7 +204,7 @@ export function CompareScenarioTab({ scenarioRows }: Props) {
             />
           ) : (
             <Suspense fallback={<Skeleton height={520} radius="md" />}>
-              <SplitTimeline assignments={leftRows} height={520} />
+              <SplitTimeline assignments={leftRows} height={520} presentationMode />
             </Suspense>
           )}
         </SlotCard>
@@ -222,7 +222,7 @@ export function CompareScenarioTab({ scenarioRows }: Props) {
             />
           ) : (
             <Suspense fallback={<Skeleton height={520} radius="md" />}>
-              <SplitTimeline assignments={rightRows} height={520} />
+              <SplitTimeline assignments={rightRows} height={520} presentationMode />
             </Suspense>
           )}
         </SlotCard>
