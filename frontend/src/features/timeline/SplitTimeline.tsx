@@ -93,9 +93,12 @@ export function SplitTimeline({
     return set;
   }, [presentationMode, assignments]);
 
+  // 데이터에 GAM 이 없으면 SND only 모드 — GAM subplot 안 그리고 SND 가 풀 height.
+  const hasGam = useMemo(() => assignments.some((a) => a.terminal === 'GAM'), [assignments]);
+
   const { traces, shapes, annotations, computedXRange } = useMemo(
-    () => buildFigure(assignments, xRange, colorBy, presentationMode, invalidRowIds),
-    [assignments, xRange, colorBy, presentationMode, invalidRowIds],
+    () => buildFigure(assignments, xRange, colorBy, presentationMode, invalidRowIds, hasGam),
+    [assignments, xRange, colorBy, presentationMode, invalidRowIds, hasGam],
   );
 
   const assignmentByRowId = useMemo(() => {
@@ -129,9 +132,10 @@ export function SplitTimeline({
     hovermode: 'closest',
     paper_bgcolor: 'transparent',
     plot_bgcolor: plotBg,
-    grid: { rows: 2, columns: 1, pattern: 'independent' },
+    // hasGam=false 면 grid 1행으로 — SND 가 풀 height. GAM subplot 의 빈 회색 공간 제거.
+    grid: { rows: hasGam ? 2 : 1, columns: 1, pattern: 'independent' },
 
-    // SND (상단)
+    // SND (상단) — hasGam=false 면 풀 height (domain [0, 1])
     xaxis: {
       type: 'date',
       domain: [0, 1],
@@ -141,10 +145,11 @@ export function SplitTimeline({
       tickcolor: tickColor,
       color: tickColor,
       showgrid: true,
-      showticklabels: false,
+      // SND only 모드일 땐 x축 라벨 보임 (혼자라 더 이상 hidden 일 필요 없음).
+      showticklabels: !hasGam,
     },
     yaxis: {
-      domain: [0.52, 1],
+      domain: hasGam ? [0.52, 1] : [0, 1],
       range: [0, TERMINAL_LAYOUT.SND.yMax],
       // 라벨 = 선석 경계 (0, 300, 600, 900, 1200, 1500)
       dtick: TERMINAL_LAYOUT.SND.step,
@@ -155,29 +160,33 @@ export function SplitTimeline({
       zeroline: false,
     },
 
-    // GAM (하단)
-    xaxis2: {
-      type: 'date',
-      domain: [0, 1],
-      anchor: 'y2',
-      range: computedXRange,
-      matches: 'x',
-      gridcolor: gridColor,
-      tickcolor: tickColor,
-      color: tickColor,
-      showgrid: true,
-    },
-    yaxis2: {
-      domain: [0, 0.48],
-      range: [0, TERMINAL_LAYOUT.GAM.yMax],
-      // 라벨 = 선석 경계 (0, 350, 700, 1050, 1400)
-      dtick: TERMINAL_LAYOUT.GAM.step,
-      title: { text: 'GAM (m)', standoff: 8 },
-      gridcolor: gridColor,
-      tickcolor: tickColor,
-      color: tickColor,
-      zeroline: false,
-    },
+    // GAM (하단) — hasGam=false 면 layout 에서 제거 (조건부 spread).
+    ...(hasGam
+      ? {
+          xaxis2: {
+            type: 'date' as const,
+            domain: [0, 1] as [number, number],
+            anchor: 'y2' as const,
+            range: computedXRange,
+            matches: 'x' as const,
+            gridcolor: gridColor,
+            tickcolor: tickColor,
+            color: tickColor,
+            showgrid: true,
+          },
+          yaxis2: {
+            domain: [0, 0.48] as [number, number],
+            range: [0, TERMINAL_LAYOUT.GAM.yMax],
+            // 라벨 = 선석 경계 (0, 350, 700, 1050, 1400)
+            dtick: TERMINAL_LAYOUT.GAM.step,
+            title: { text: 'GAM (m)', standoff: 8 },
+            gridcolor: gridColor,
+            tickcolor: tickColor,
+            color: tickColor,
+            zeroline: false,
+          },
+        }
+      : {}),
 
     shapes,
     annotations,
@@ -231,6 +240,7 @@ function buildFigure(
   colorBy: ColorByMode,
   presentationMode: boolean,
   invalidRowIds: Set<string>,
+  hasGam: boolean,
 ): FigureBuild {
   const traces: Partial<PlotData>[] = [];
   const shapes: Partial<Shape>[] = [];
@@ -312,7 +322,9 @@ function buildFigure(
   }
 
   // 선석 구분선(점선) — 각 terminal layout.step 간격마다.
-  for (const t of TERMINAL_ORDER) {
+  // hasGam=false 면 GAM 의 line/annotation 은 layout 에 yaxis2 가 없어 hidden 처리됨.
+  const activeTerminals: Terminal[] = hasGam ? TERMINAL_ORDER : ['SND'];
+  for (const t of activeTerminals) {
     const layout = TERMINAL_LAYOUT[t];
     const xAxisRef = t === 'SND' ? 'x' : 'x2';
     const yAxisRef = t === 'SND' ? 'y' : 'y2';

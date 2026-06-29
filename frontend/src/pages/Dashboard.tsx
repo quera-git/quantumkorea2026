@@ -10,6 +10,7 @@ import { JobsListPanel } from '@/features/jobs/JobsListPanel';
 import { SolverPanel } from '@/features/jobs/SolverPanel';
 import { ComparePanel } from '@/features/results/ComparePanel';
 import { ScenarioPanel } from '@/features/scenario/ScenarioPanel';
+import { env } from '@/shared/config/env';
 import { AppBar } from '@/shared/ui/AppBar';
 import { SectionGroup } from '@/shared/ui/SectionGroup';
 import { SectionNav, type NavGroup } from '@/shared/ui/SectionNav';
@@ -167,16 +168,21 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'scenario', label: '시나리오 + 편집' },
     ],
   },
-  {
-    id: 'bpt-workflow',
-    label: 'BPT 직접 워크플로',
-    icon: Database,
-    anchors: [
-      { id: 'bpt-data', label: 'BPT 데이터' },
-      { id: 'bpt-solver', label: '솔버 작업' },
-      { id: 'bpt-compare', label: '결과 비교' },
-    ],
-  },
+  // BPT 직접 워크플로 = backend 필수 — demo 모드에선 NAV 에서 숨김.
+  ...(env.demoMode
+    ? []
+    : [
+        {
+          id: 'bpt-workflow',
+          label: 'BPT 직접 워크플로',
+          icon: Database,
+          anchors: [
+            { id: 'bpt-data', label: 'BPT 데이터' },
+            { id: 'bpt-solver', label: '솔버 작업' },
+            { id: 'bpt-compare', label: '결과 비교' },
+          ],
+        },
+      ]),
 ];
 
 export default function Dashboard() {
@@ -236,6 +242,7 @@ export default function Dashboard() {
               </SectionGroup>
             </Anim>
 
+            {!env.demoMode && (
             <Anim delay={80}>
               <SectionGroup
                 id="bpt-workflow"
@@ -283,6 +290,7 @@ export default function Dashboard() {
                 </Stack>
               </SectionGroup>
             </Anim>
+            )}
           </Stack>
         </main>
       </Layout>

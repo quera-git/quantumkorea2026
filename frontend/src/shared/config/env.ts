@@ -13,4 +13,9 @@ export const env = {
   backendUrl: import.meta.env.VITE_BACKEND_URL?.trim() ?? '',
   /** GET /results 폴링 간격(ms). */
   pollIntervalMs: parseInt(import.meta.env.VITE_POLL_INTERVAL_MS, POLL_DEFAULT_MS),
+  /**
+   * 부스 데모 모드. true 면 backend 의존 UI (라이브 BPTC, BPT 직접 워크플로) 를 숨김.
+   * Vercel frontend-only 배포 시 VITE_DEMO_MODE=1 로 설정.
+   */
+  demoMode: import.meta.env.VITE_DEMO_MODE === '1',
 } as const;

@@ -3,6 +3,7 @@ import {
   ArrowLeftRight,
   Cpu,
   GitCommitHorizontal,
+  Grid2x2,
   Layers,
   Move,
   ShieldCheck,
@@ -11,6 +12,7 @@ import {
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import { AuditPanel } from '@/features/audit/AuditPanel';
+import { FourWayCompare } from '@/features/compare-4way/FourWayCompare';
 import { CompareScenarioTab } from '@/features/compare-scenario/CompareScenarioTab';
 import { LiveQueryPanel } from '@/features/crawler/LiveQueryPanel';
 import { useLiveScenarioStore } from '@/features/crawler/liveScenarioStore';
@@ -20,6 +22,7 @@ import { useEditorStore } from '@/features/editor/editor.store';
 import { SearchBar } from '@/features/search/SearchBar';
 import { DEFAULT_FILTER, applyFilter, type SearchFilter } from '@/features/search/searchFilter';
 import { UploadButton } from '@/features/upload/UploadButton';
+import { env } from '@/shared/config/env';
 import { useUploadedScenarioStore } from '@/features/upload/uploadedScenarioStore';
 import { ValidationPanel } from '@/features/validation/ValidationPanel';
 import { Button } from '@/shared/ui/Button';
@@ -40,6 +43,9 @@ const SplitTimeline = lazy(() =>
 import { StatusLegend } from '@/features/timeline/StatusLegend';
 
 // 정적 시나리오는 제거됨 — 라이브/업로드만 source. scenarioLoader.ts 는 후방 호환용 stub.
+
+import { usePinnedResults } from './pinnedResults';
+import { useAutoRegisterDemo } from './useAutoRegisterDemo';
 
 const PillRow = styled.div(({ theme }) => ({
   display: 'flex',
@@ -172,15 +178,33 @@ const ResultMeta = styled.div(({ theme }) => ({
   },
 }));
 
-type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result' | 'compare';
+type View = 'timeline' | 'editor' | 'audit' | 'validation' | 'result' | 'compare' | 'compare4way';
 
 export function ScenarioPanel() {
+  // 부스 데모 자동 등록 — 첫 진입 + uploadedScenarios 비어있을 때만 동작.
+  useAutoRegisterDemo();
+
   const [activeId, setActiveId] = useState<string>('');
   const [view, setView] = useState<View>('timeline');
   const [filter, setFilter] = useState<SearchFilter>({ ...DEFAULT_FILTER, routes: new Set() });
 
   const liveScenario = useLiveScenarioStore((s) => s.current);
-  const uploadedScenarios = useUploadedScenarioStore((s) => s.scenarios);
+  const allUploadedScenarios = useUploadedScenarioStore((s) => s.scenarios);
+  const pinnedResultIds = usePinnedResults((s) => s.pinned);
+
+  // pill 행에는 입력/사용자 업로드 시나리오 + 사용자가 4-way 탭에서 핀한 결과들.
+  // 데모 솔버 결과 (scenario-{1,2,3}-{cqm|hybrid|gurobi|operator}) 12개는 기본 hidden —
+  // 4-way 비교 탭이 자동 lookup 으로 사용 (auto-register 가 store 에 박아둠).
+  // 시나리오 lookup 등 store 접근은 allUploadedScenarios 그대로 사용.
+  const uploadedScenarios = useMemo(() => {
+    const pinnedSet = new Set(pinnedResultIds);
+    return allUploadedScenarios.filter((s) => {
+      const isDemoResult = /^scenario-[1-3]-(cqm|hybrid|gurobi|operator)$/.test(s.id);
+      // 입력/사용자 업로드 시나리오는 항상 노출. 데모 결과는 pinned 된 것만.
+      if (!isDemoResult) return true;
+      return pinnedSet.has(s.id);
+    });
+  }, [allUploadedScenarios, pinnedResultIds]);
   const removeUploaded = useUploadedScenarioStore((s) => s.remove);
 
   // 시나리오 = 라이브 1개(있을 때) + 업로드 N개. 정적 시나리오는 제거됨.
@@ -269,7 +293,7 @@ export function ScenarioPanel() {
       />
 
       <Stack gap={4}>
-        <LiveQueryPanel />
+        {!env.demoMode && <LiveQueryPanel />}
 
         <PillRow>
           {liveScenario && (
@@ -395,6 +419,17 @@ export function ScenarioPanel() {
             <ArrowLeftRight size={14} aria-hidden="true" />
             비교
           </Tab>
+          <Tab
+            type="button"
+            role="tab"
+            aria-selected={view === 'compare4way'}
+            active={view === 'compare4way'}
+            onClick={() => setView('compare4way')}
+            title="CQM · Hybrid · Gurobi · 운영자 4가지 결과 한 화면 비교"
+          >
+            <Grid2x2 size={14} aria-hidden="true" />
+            4-way 비교
+          </Tab>
         </TabRow>
 
         {!scenario && (
@@ -439,6 +474,10 @@ export function ScenarioPanel() {
         {scenario && view === 'compare' && (
           <CompareScenarioTab scenarioRows={scenario.rows} />
         )}
+
+        {/* 4-way 비교는 시나리오 활성과 무관하게 항상 노출 — 데모 자동 등록된
+            결과(result-cqm/hybrid/gurobi/operator)를 자체적으로 lookup. */}
+        {view === 'compare4way' && <FourWayCompare />}
       </Stack>
     </Card>
   );
